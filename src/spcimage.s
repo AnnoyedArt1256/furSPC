@@ -1336,7 +1336,7 @@ doFinePitch:
   adc #$80
   sta temp
   lda note_pitch_hi, x
-  adc #2
+  adc #1
   sta temp+1
 
   sec
@@ -1353,7 +1353,7 @@ doFinePitch:
 ;skip_pitch:
 
 
-.repeat 4
+.repeat 2
   sec
   lda temp
   sbc tri_vibrato_lookup, y
