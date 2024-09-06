@@ -1,0 +1,80 @@
+#!/usr/bin/make -f
+#
+# Makefile for LoROM template
+# Copyright 2014-2015 Damian Yerrick
+#
+# Copying and distribution of this file, with or without
+# modification, are permitted in any medium without royalty
+# provided the copyright notice and this notice are preserved.
+# This file is offered as-is, without any warranty.
+#
+
+# These are used in the title of the SFC program and the zip file.
+title = furSPC-test
+version = 0.1
+
+# Space-separated list of asm files without .s extension
+# (use a backslash to continue on the next line)
+objlistspc = \
+  spcheader spcimage
+brrlist = 
+
+AS65 := ca65
+LD65 := ld65
+CFLAGS65 := -g
+objdir := obj/snes
+srcdir := src
+
+ifdef COMSPEC
+PY := py.exe
+else
+PY :=
+endif
+
+# Calculate the current directory as Wine applications would see it.
+# yep, that's 8 backslashes.  Apparently, there are 3 layers of escaping:
+# one for the shell that executes sed, one for sed, and one for the shell
+# that executes wine
+# TODO: convert to use winepath -w
+wincwd := $(shell pwd | sed -e "s'/'\\\\\\\\'g")
+
+# .PHONY means these targets aren't actual filenames
+.PHONY: all dist clean
+
+all: $(title).spc
+
+clean:
+	-rm $(objdir)/*.o $(objdir)/*.s
+
+dist: zip
+zip: $(title)-$(version).zip
+$(title)-$(version).zip: zip.in all README.md $(objdir)/index.txt
+	$(PY) tools/zipup.py $< $(title)-$(version) -o $@
+	-advzip -z3 $@
+
+# Build zip.in from the list of files in the Git tree
+zip.in:
+	git ls-files | grep -e "^[^.]" > $@
+	echo zip.in >> $@
+	echo $(title).spc >> $@
+
+$(objdir)/index.txt: makefile
+	echo "Files produced by build tools go here. (This file's existence forces the unzip tool to create this folder.)" > $@
+
+# Rules for ROM
+
+objlistospc = $(foreach o,$(objlistspc),$(objdir)/$(o).o)
+
+spcmap.txt $(title).spc: spc.cfg $(objlistospc)
+	$(LD65) -o $(title).spc -m spcmap.txt -C $^
+
+$(objdir)/%.o: $(srcdir)/%.s $(srcdir)/snes.inc $(srcdir)/global.inc
+	$(AS65) $(CFLAGS65) $< -o $@
+
+$(objdir)/%.o: $(objdir)/%.s
+	$(AS65) $(CFLAGS65) $< -o $@
+
+$(objdir)/mktables.s: tools/mktables.py
+	$< > $@
+
+$(objdir)/spcimage.o: $(brrlisto)
