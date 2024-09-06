@@ -277,17 +277,22 @@ f = open("src/song.s","w")
 f.write("TIMER_HZ = "+str(round(song_clock))+"\n")
 
 f.write("echo_info:\n.byte ")
-print(flags)
-f.write(str(0 if bool(flags['echo']) else 32)+", ")
-f.write(str(int(flags['echoVolL'])&0xff)+", ")
-f.write(str(int(flags['echoVolR'])&0xff)+", ")
-f.write(str(int(flags['echoFeedback'])&0xff)+", ")
-f.write(str(int(flags['echoDelay'])&15)+", ")
+try:
+    print(flags)
+    f.write(str(0 if bool(flags['echo']) else 32)+", ")
+    f.write(str(int(flags['echoVolL'])&0xff)+", ")
+    f.write(str(int(flags['echoVolR'])&0xff)+", ")
+    f.write(str(int(flags['echoFeedback'])&0xff)+", ")
+    f.write(str(int(flags['echoDelay'])&15)+", ")
+    for i in range(8):
+        f.write(str(int(flags["echoFilter"+str(i)])&0xff)+", ")
 
-for i in range(8):
-    f.write(str(int(flags["echoFilter"+str(i)])&0xff)+", ")
-
-f.write(str(0xf8-((int(flags['echoDelay'])&15)<<3))+"\n")
+    f.write(str(0xf8-((int(flags['echoDelay'])&15)<<3))+"\n")
+except:
+    f.write("32, 0, 0, 0, 0, ")
+    for i in range(8):
+        f.write("0, ")
+    f.write("248\n")
 
 relV = []
 relA = []
