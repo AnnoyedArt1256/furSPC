@@ -2,6 +2,7 @@
 an SNES sound driver for Furnace
 
 ### **THIS SOUND DRIVER IS CURRENTLY A WIP**
+### **IF THERE ARE ANY BUGS IN THE DRIVER PLEASE LET ME KNOW!!!**
 
 FINALLY, an SNES driver that is not total dogwater to use!
 
