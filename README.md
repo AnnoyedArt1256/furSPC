@@ -11,6 +11,8 @@ FINALLY, an SNES driver that is not total dogwater to use!
 
 * The driver only supports **volume, arpeggio, waveform, noise freq and special** macros in each instrument and it DOESN'T support LFO and ADSR macros nor delay and step length
 
+* MAKE SURE TO CONVERT ALL SAMPLES IN THE MODULE TO **BRR SAMPLES** BEFORE USING THE CONVERTER TOOL
+ 
 * The furSPC driver only supports these effects:
   * 00xx: arpeggio
   * 01xx: pitch slide up
