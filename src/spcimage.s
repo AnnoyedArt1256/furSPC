@@ -581,10 +581,12 @@ effectE4:
   lda #$00
   sta slide_amt_sign, x
   ldx ch
-  lda #0
+  lda #8
   sta note_dest, x
   lda #$ff
   sta didporta, x
+  lda #2
+  sta do_port, x
   jmp begnote
 .endmacro
 
@@ -611,7 +613,7 @@ effectE5:
   sta slide_amt_sign, x
   lda #$ff
   sta didporta, x
-  lda #4
+  lda #2
   sta do_port, x
   jmp begnote
 :
@@ -619,7 +621,7 @@ effectE5:
   sta slide_amt_sign, x
   lda #$ff
   sta didporta, x
-  lda #4
+  lda #2
   sta do_port, x
   jmp begnote
 .endmacro
@@ -652,7 +654,7 @@ effectE9:
   sta note_dest, x
   lda #$ff
   sta didporta, x
-  lda #4
+  lda #2
   sta do_port, x
   jmp begnote
 .endmacro
@@ -673,7 +675,7 @@ effectEA:
   sta note_dest, x
   lda #$ff
   sta didporta, x
-  lda #4
+  lda #2
   sta do_port, x
   jmp begnote
 .endmacro
