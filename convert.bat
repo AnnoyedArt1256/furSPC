@@ -2,8 +2,8 @@
 if [%1]==[] goto usage
 python3 convert_to_asm.py %1
 echo converted .fur file to .s!
-make clean
-make
+make -f makefile.win clean
+make -f makefile.win
 @echo compiled .spc file at furSPC-test.spc
 goto :eof
 :usage
