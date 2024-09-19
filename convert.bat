@@ -2,6 +2,8 @@
 if [%1]==[] goto usage
 python3 convert_to_asm.py %1
 echo converted .fur file to .s!
+rmdir /s /q obj
+md obj\snes
 make -f makefile.win clean
 make -f makefile.win
 @echo compiled .spc file at furSPC-test.spc

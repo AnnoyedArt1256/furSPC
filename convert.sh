@@ -7,6 +7,8 @@ then
 else
 python3 convert_to_asm.py $1
 echo "converted .fur file to .asm!"
+rm -r ./obj
+mkdir -p ./obj/snes
 make clean
 make
 echo "compiled .spc file at furSPC-test.spc"
