@@ -4,8 +4,9 @@ python3 convert_to_asm.py %1
 echo converted .fur file to .s!
 rmdir /s /q obj
 md obj\snes
-make -f makefile.win clean
-make -f makefile.win
+ca65 -g src\spcheader.s -o obj\snes\spcheader.o
+ca65 -g src\spcimage.s -o obj\snes\spcimage.o
+ld65 -o furSPC-test.spc -m spcmap.txt -C spc.cfg obj\snes\spcheader.o obj\snes\spcimage.o
 @echo compiled .spc file at furSPC-test.spc
 goto :eof
 :usage
