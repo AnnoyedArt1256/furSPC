@@ -88,7 +88,7 @@ class FurnaceInstrument:
             b'X1': self.__load_x1_block,
             b'NE': self.__load_ne_block,
             # TODO: No documentation?
-            #b'EF': self.__load_ef_block,
+            b'EF': self.__load_ef_block,
             b'PN': self.__load_pn_block,
             b'S2': self.__load_s2_block,
         }
@@ -607,8 +607,8 @@ class FurnaceInstrument:
         return sm
 
     # TODO: No documentation?
-    #def __load_ef_block(self, stream: BytesIO) -> InsFeatureESFM:
-    #    pass
+    def __load_ef_block(self, stream: BytesIO): # -> InsFeatureESFM:
+        pass
 
     def __load_pn_block(self, stream: BytesIO) -> InsFeaturePowerNoise:
         return InsFeaturePowerNoise(
