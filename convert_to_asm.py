@@ -287,7 +287,7 @@ try:
     for i in range(8):
         f.write(str(int(flags["echoFilter"+str(i)])&0xff)+", ")
 
-    f.write(str(0xf8-((int(flags['echoDelay'])&15)<<3))+"\n")
+    f.write(str(0xff-((int(flags['echoDelay'])&15)<<3))+"\n")
 except:
     f.write("32, 0, 0, 0, 0, ")
     for i in range(8):
