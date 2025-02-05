@@ -3,7 +3,7 @@
 
 .define loop_pattern_num 0
 .define porta_once 1
-
+.define SLIDE_SPEED 1
 
 .define chnum 8
 
@@ -585,7 +585,7 @@ effectE4:
   sta note_dest, x
   lda #$ff
   sta didporta, x
-  lda #2
+  lda #SLIDE_SPEED+1
   sta do_port, x
   jmp begnote
 .endmacro
@@ -613,7 +613,7 @@ effectE5:
   sta slide_amt_sign, x
   lda #$ff
   sta didporta, x
-  lda #2
+  lda #SLIDE_SPEED+1
   sta do_port, x
   jmp begnote
 :
@@ -621,7 +621,7 @@ effectE5:
   sta slide_amt_sign, x
   lda #$ff
   sta didporta, x
-  lda #2
+  lda #SLIDE_SPEED+1
   sta do_port, x
   jmp begnote
 .endmacro
@@ -654,7 +654,7 @@ effectE9:
   sta note_dest, x
   lda #$ff
   sta didporta, x
-  lda #2
+  lda #SLIDE_SPEED+1
   sta do_port, x
   jmp begnote
 .endmacro
@@ -675,7 +675,7 @@ effectEA:
   sta note_dest, x
   lda #$ff
   sta didporta, x
-  lda #2
+  lda #SLIDE_SPEED+1
   sta do_port, x
   jmp begnote
 .endmacro
@@ -1574,32 +1574,6 @@ slide_skip:
   bpl relslide_loop
 
   ldx #chnum-1
-note_loop:
-  lda absarp, x
-  beq nrel
-  lda arp, x
-  and #127
-  jmp nout
-nrel:
-  lda note_n, x
-  clc
-  ;adc arp, x
-nout:
-  clc
-  jsr clamp_note
-  tay
-  jsr gen_note_table
-  clc
-  lda note_table_temp
-  adc slide_buffer_lo, x
-  sta note_pitch_lo, x
-  lda note_table_temp+1
-  adc slide_buffer_hi, x
-  sta note_pitch_hi, x
-  dex
-  bpl note_loop
-
-  ldx #chnum-1
 slide_loop:
   lda slide_amt, x
   bne :+
@@ -1655,6 +1629,33 @@ slide_loop2:
   bmi slide_loopt
   jmp slide_loop
 slide_loopt:
+
+  ldx #chnum-1
+note_loop:
+  lda absarp, x
+  beq nrel
+  lda arp, x
+  and #127
+  jmp nout
+nrel:
+  lda note_n, x
+  clc
+  ;adc arp, x
+nout:
+  clc
+  jsr clamp_note
+  tay
+  jsr gen_note_table
+  clc
+  lda note_table_temp
+  adc slide_buffer_lo, x
+  sta note_pitch_lo, x
+  lda note_table_temp+1
+  adc slide_buffer_hi, x
+  sta note_pitch_hi, x
+  dex
+  bpl note_loop
+
 
   ldx #chnum-1
 :
