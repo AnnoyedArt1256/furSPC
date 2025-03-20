@@ -3,7 +3,11 @@
 
 .define loop_pattern_num 0
 .define porta_once 1
-.define SLIDE_SPEED 1
+.define SLIDE_SPEED 0
+
+; 0: legacy method
+; 1: non-legacy (MORE ACCURATE) method (still non-linear though)
+.define SLIDE_METHOD 1
 
 .define chnum 8
 
@@ -588,6 +592,8 @@ effectE3:
   sta note_dest, x
   lda #$ff
   sta didporta, x
+  lda #SLIDE_SPEED+1
+  sta do_port, x
   jmp begnote
 .endmacro
 
@@ -1699,6 +1705,13 @@ nout:
   jsr clamp_note
   sta note_nums, x
   tay
+  .if SLIDE_METHOD = 1
+  jsr gen_note_table_slide
+  lda note_table_temp
+  sta note_pitch_lo, x
+  lda note_table_temp+1
+  sta note_pitch_hi, x
+  .else
   jsr gen_note_table
   clc
   lda note_table_temp
@@ -1707,6 +1720,7 @@ nout:
   lda note_table_temp+1
   adc slide_buffer_hi, x
   sta note_pitch_hi, x
+  .endif
   dex
   bpl note_loop
 
@@ -1931,6 +1945,81 @@ note_table_lo:
     .incbin "note_lo.bin"
 note_table_hi:
     .incbin "note_hi.bin"
+
+.if SLIDE_METHOD = 1
+gen_note_table_slide:
+    sty PRODUCT+4
+    stx PRODUCT+5
+    pha
+
+    lda slide_buffer_lo, x
+    sta T2
+    lda slide_buffer_hi, x
+    sta T2+1
+
+    lda T2+1
+    asl
+    ror T2+1
+    ror T2
+
+    lda T2+1
+    asl
+    ror T2+1
+    ror T2
+
+    lda T2+1
+    asl
+    ror T2+1
+    ror T2
+
+    lda note_table_lo, y
+    clc
+    adc T2
+    sta T2
+    lda note_table_hi, y
+    adc T2+1
+    sta T2+1
+
+    lda wav_length, x
+    tay
+    lda insM, y
+    and #32
+    beq :+
+    lda insWLen, y
+    tay
+    lda insWAVRL, y
+    sta T1
+    lda insWAVRH, y
+    sta T1+1
+    jmp :++
+:
+    lda cursamp, x
+    tax
+    lda insPCMRL, x
+    sta T1
+    lda insPCMRH, x
+    sta T1+1
+:
+    jsr multiply_16bit_unsigned
+    ldx PRODUCT+5   
+;    lda T1
+;    sta $160, x
+;    lda T1+1
+;    sta $170, x
+;.repeat 4, I
+;    lda PRODUCT+I
+;    sta $100+I*16, x
+;.endrepeat
+
+    lda PRODUCT+1
+    sta note_table_temp
+    lda PRODUCT+2
+    sta note_table_temp+1
+    pla
+    ldy PRODUCT+4
+    rts
+
+.endif
 
 gen_note_table:
     sty PRODUCT+4
