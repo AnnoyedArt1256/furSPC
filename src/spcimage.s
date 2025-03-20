@@ -482,6 +482,24 @@ skip_echo:
   dex
   bpl :-
 
+  ; initialize the EON register
+  ldx #0
+  ldy echo_info+14 ; echoMask
+:
+  ; set bit 1 to echo mask 
+  tya
+  and #1
+  asl
+  sta special, x
+
+  tya
+  lsr
+  tay
+
+  inx
+  cpx #chnum
+  bne :-
+
   ldx #0
   stx koff_mirror
   stx patind
@@ -802,6 +820,7 @@ skip:
   sta pmod_mask
 .endmacro
 
+; EExx (used in unflavoured stock cube for the main cube part)
 .macro add_ext
 effectF7:
   get_patzp
@@ -932,10 +951,12 @@ effectF2:
 
 eff_lo:
 .repeat $18, I
+    ; i use .ident to automatically make jump tables for effects
     .lobytes .ident(.concat ("effect", .sprintf("%02X",I+$e0)))
 .endrepeat
 eff_hi:
 .repeat $18, I
+    ; i use .ident to automatically make jump tables for effects
     .hibytes .ident(.concat ("effect", .sprintf("%02X",I+$e0)))
 .endrepeat
 
@@ -1386,6 +1407,7 @@ advance_tick:
   sta tick_sel
   lda #0
   sta delay_do
+  ; advances each channel's pattern data one by one
   .repeat chnum, I
     lda #I
     sta ch
@@ -1430,6 +1452,8 @@ skipseq:
   lda #$ff
   sta delay_do
 
+  ; support for EDxx
+
   ldx #chnum-1
 note_delay_loop:
   stx ch
@@ -1448,6 +1472,7 @@ note_delay_loop_end:
   dex
   bpl note_delay_loop
 
+  ; this is for the 0Axx effect to work
   ldx #chnum-1
 vol_add_loop:
   lda vol_tick, x
@@ -1480,6 +1505,7 @@ vol_add_loop_end:
   bpl vol_add_loop
 
 
+  ; ECxx effect implementation
   ldx #chnum-1
 note_cut_loop:
   lda cut_dur, x
@@ -1499,6 +1525,7 @@ note_cut_loop_end:
   dex
   bpl note_cut_loop
   
+  ; this does sample mapping for instruments that have a custom sample map(?)
 .repeat 8, I
   lda sample_mapped+I
   beq :+++
@@ -1548,6 +1575,7 @@ note_cut_loop_end:
 
 .endrepeat
 
+  ; pre-pitch-slide code
   ldx #chnum-1
 relslide_loop:
   lda note_dest ,x
@@ -1572,6 +1600,8 @@ positive_slide2:
 slide_skip:
   dex
   bpl relslide_loop
+
+  ; now let's do the actual pitch sliding (non-linear atm)
 
   ldx #chnum-1
 slide_loop:
@@ -1631,33 +1661,6 @@ slide_loop2:
 slide_loopt:
 
   ldx #chnum-1
-note_loop:
-  lda absarp, x
-  beq nrel
-  lda arp, x
-  and #127
-  jmp nout
-nrel:
-  lda note_n, x
-  clc
-  ;adc arp, x
-nout:
-  clc
-  jsr clamp_note
-  tay
-  jsr gen_note_table
-  clc
-  lda note_table_temp
-  adc slide_buffer_lo, x
-  sta note_pitch_lo, x
-  lda note_table_temp+1
-  adc slide_buffer_hi, x
-  sta note_pitch_hi, x
-  dex
-  bpl note_loop
-
-
-  ldx #chnum-1
 :
   lda note_tick, x
   cmp #96
@@ -1667,6 +1670,7 @@ note_tick_loop:
   dex
   bpl :-
 
+  ; macro tiem
 .repeat chnum, I
   lda #I
   sta ch
@@ -1677,18 +1681,19 @@ note_tick_loop:
 .endrepeat
   jsr insnois
 
+  ; pitch bends go brr
   ldx #chnum-1
-note_loop3:
+note_loop:
   lda absarp, x
-  beq nrel3
+  beq nrel
   lda arp, x
   and #127
-  jmp nout3
-nrel3:
+  jmp nout
+nrel:
   lda note_n, x
   clc
   adc arp, x
-nout3:
+nout:
   clc
   jsr add_arpeff
   jsr clamp_note
@@ -1703,8 +1708,9 @@ nout3:
   adc slide_buffer_hi, x
   sta note_pitch_hi, x
   dex
-  bpl note_loop3
+  bpl note_loop
 
+  ; calculate final volume from volume column and volume macros
   ldx #chnum-1
 vol_loop:
   lda volm, x
