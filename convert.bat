@@ -1,6 +1,6 @@
 @echo off
 if [%1]==[] goto usage
-python3 convert_to_asm.py %1
+python convert_to_asm.py %1
 echo converted .fur file to .s!
 rmdir /s /q obj
 md obj\snes

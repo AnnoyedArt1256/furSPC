@@ -5,6 +5,7 @@
 *.chrsfc
 /obj/snes/*.s
 /obj/snes/*.wav
+/src/features.inc
 /zip.in
 /map.txt
 /spcmap.txt
