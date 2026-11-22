@@ -35,6 +35,8 @@ def comp(pat):
         elif pat[i] == 0xE4: i += 2
         elif pat[i] == 0xE5: i += 3
         elif pat[i] == 0xE6: i += 2
+        elif pat[i] == 0xE7: i += 3
+        elif pat[i] == 0xE8: i += 2
         elif pat[i] == 0xE9: i += 3
         elif pat[i] == 0xEA: i += 3
         elif pat[i] == 0xEB: i += 2
@@ -173,6 +175,24 @@ def conv_pattern(pattern):
                 new_byte = 1
                 temp.extend([0xE6, k[1]])
                 continue
+            if k[0] == 0x08:
+                new_byte = 1
+                left = ((k[1] >> 4) | (k[1] & 0xf0)) >> 1
+                right = ((k[1] & 0x0f) | ((k[1] & 0x0f) << 4)) >> 1
+                temp.extend([0xE7, left & 0x7f, right & 0x7f])
+                continue
+            if k[0] == 0x80:
+                new_byte = 1
+                temp.extend([0xE7, min(255-k[1], 127), min(k[1], 127)])
+                continue
+            if k[0] == 0x81:
+                new_byte = 1
+                temp.extend([0xE8, (k[1] >> 1) & 0x7f])
+                continue
+            if k[0] == 0x82:
+                new_byte = 1
+                temp.extend([0xE8, 0x80 | ((k[1] >> 1) & 0x7f)])
+                continue
             if k[0] == 0x0A:
                 new_byte = 1
                 if k[1] == 0:
@@ -300,6 +320,8 @@ relA = []
 relD = []
 relS = []
 relN = []
+relPL = []
+relPR = []
 
 f.write("ticks_init:")
 f.write(".byte ")
@@ -409,6 +431,40 @@ f.write("insNH:\n")
 f.write(".hibytes ")
 for i in range(len(module.instruments)):
     f.write("ins"+str(i)+"N")
+    if i == len(module.instruments)-1:
+        f.write("\n")
+    else:
+        f.write(", ")
+
+f.write("insPLL:\n")
+f.write(".lobytes ")
+for i in range(len(module.instruments)):
+    f.write("ins"+str(i)+"PL")
+    if i == len(module.instruments)-1:
+        f.write("\n")
+    else:
+        f.write(", ")
+f.write("insPLH:\n")
+f.write(".hibytes ")
+for i in range(len(module.instruments)):
+    f.write("ins"+str(i)+"PL")
+    if i == len(module.instruments)-1:
+        f.write("\n")
+    else:
+        f.write(", ")
+
+f.write("insPRL:\n")
+f.write(".lobytes ")
+for i in range(len(module.instruments)):
+    f.write("ins"+str(i)+"PR")
+    if i == len(module.instruments)-1:
+        f.write("\n")
+    else:
+        f.write(", ")
+f.write("insPRH:\n")
+f.write(".hibytes ")
+for i in range(len(module.instruments)):
+    f.write("ins"+str(i)+"PR")
     if i == len(module.instruments)-1:
         f.write("\n")
     else:
@@ -538,10 +594,12 @@ for i in range(len(module.instruments)):
     vol = [0x7F,0xFF,0xFF]
     special = [0xFF,0xFF]
     noise = [0xFF,0xFF]
+    panl = [0xFF,0xFF]
+    panr = [0xFF,0xFF]
     macros = []
     for j in a:
         macros = j.macros
-    hasRelTotal = [0,0,0,0,0]
+    hasRelTotal = [0,0,0,0,0,0,0]
     has_noise.append(0)
     for j in macros:
         kind = j.kind
@@ -646,6 +704,50 @@ for i in range(len(module.instruments)):
             hasRelTotal[3] = 1
             special.append(0xFF)
             special.append(loop)
+        if kind == MacroCode.PAN_L:
+            s = j.speed
+            panl = []
+            loop = 0xff
+            loop2 = 0
+            hasRel = 0
+            for k in j.data:
+                if k == MacroItem.LOOP:
+                    loop = loop2
+                elif k == MacroItem.RELEASE:
+                    panl.append(0xFF)
+                    panl.append(loop)
+                    relPL.append(len(panl))
+                    hasRel = 1
+                else:
+                    loop2 = len(panl)
+                    panl.append(k&127)
+            if hasRel == 0:
+                relPL.append(len(panl))
+            hasRelTotal[5] = 1
+            panl.append(0xFF)
+            panl.append(loop)
+        if kind == MacroCode.PAN_R:
+            s = j.speed
+            panr = []
+            loop = 0xff
+            loop2 = 0
+            hasRel = 0
+            for k in j.data:
+                if k == MacroItem.LOOP:
+                    loop = loop2
+                elif k == MacroItem.RELEASE:
+                    panr.append(0xFF)
+                    panr.append(loop)
+                    relPR.append(len(panr))
+                    hasRel = 1
+                else:
+                    loop2 = len(panr)
+                    panr.append(k&127)
+            if hasRel == 0:
+                relPR.append(len(panr))
+            hasRelTotal[6] = 1
+            panr.append(0xFF)
+            panr.append(loop)
         if kind == MacroCode.DUTY:
             s = j.speed
             noise = []
@@ -680,11 +782,17 @@ for i in range(len(module.instruments)):
         relS.append(0)
     if hasRelTotal[4] == 0:
         relN.append(0)
+    if hasRelTotal[5] == 0:
+        relPL.append(0)
+    if hasRelTotal[6] == 0:
+        relPR.append(0)
     vol = str(vol)[1:-1]
     duty = str(duty)[1:-1]
     arp = str(arp)[1:-1]
     special = str(special)[1:-1]
     noise = str(noise)[1:-1]
+    panl = str(panl)[1:-1]
+    panr = str(panr)[1:-1]
 
     if arp in dups:
         f.write("ins"+str(i)+"A = "+dups[arp]+"\n")
@@ -721,10 +829,26 @@ for i in range(len(module.instruments)):
         f.write(".byte "+noise+"\n")
         dups[noise] = "ins"+str(i)+"N"
 
+    if panl in dups:
+        f.write("ins"+str(i)+"PL = "+dups[panl]+"\n")
+    else:
+        f.write("ins"+str(i)+"PL:\n")
+        f.write(".byte "+panl+"\n")
+        dups[panl] = "ins"+str(i)+"PL"
+
+    if panr in dups:
+        f.write("ins"+str(i)+"PR = "+dups[panr]+"\n")
+    else:
+        f.write("ins"+str(i)+"PR:\n")
+        f.write(".byte "+panr+"\n")
+        dups[panr] = "ins"+str(i)+"PR"
+
 relV = str(relV)[1:-1]
 relD = str(relD)[1:-1]
 relA = str(relA)[1:-1]
 relS = str(relS)[1:-1]
+relPL = str(relPL)[1:-1]
+relPR = str(relPR)[1:-1]
 f.write("insArel:\n")
 f.write(".byte "+relA+"\n")
 f.write("insDrel:\n")
@@ -733,6 +857,10 @@ f.write("insVrel:\n")
 f.write(".byte "+relV+"\n")
 f.write("insSrel:\n")
 f.write(".byte "+relS+"\n")
+f.write("insPLrel:\n")
+f.write(".byte "+relPL+"\n")
+f.write("insPRrel:\n")
+f.write(".byte "+relPR+"\n")
 
 for i in range(chnum):
     order = module.subsongs[subsong].order[i]
