@@ -7,7 +7,8 @@ an SNES sound driver for Furnace
 FINALLY, an SNES driver that is not total dogwater to use!
 
 * You have to have [Python](https://www.python.org/) and the [CC65 toolchain](https://cc65.github.io/) installed
-* You **have** to set the pitch linearity option to "None". You can do this by going to `window -> song -> compatability flags -> Pitch/Playback -> Pitch linearity` and then setting the option to "None".
+* Both pitch linearity modes are supported: "None" uses frequency-based pitch slides, and "Full" uses semitone-based (1/128 semitone) pitch slides. The converter reads the module's compat flag and only assembles the pitch engine it needs. Partial linearity (old modules) is treated as Full.
+* Unused features are omitted from the generated driver: panning code is only included when a pan effect or pan macro is used, and echo setup/toggle code is only included when a channel is routed to echo.
 
 * The driver only supports **volume, arpeggio, waveform, panning (left/right), noise freq and special** macros in each instrument and it DOESN'T support LFO and ADSR macros nor delay and step length
 

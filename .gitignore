@@ -5,6 +5,11 @@
 *.chrsfc
 /obj/snes/*.s
 /obj/snes/*.wav
+/src/features.inc
+/src/note_hi.bin
+/src/note_lo.bin
+/src/sampledir.s
+/src/song.s
 /zip.in
 /map.txt
 /spcmap.txt

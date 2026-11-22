@@ -947,6 +947,7 @@ class FurnaceModule:
         self.__wavetable_ptr: List[int] = []
         self.__sample_ptr: List[int] = []
         self.__pattern_ptr: List[int] = []
+        self.__compat_flag_ptr: List[int] = []
         while True:
             element_type = read_byte(info_blk)
             if element_type == 0:
@@ -965,8 +966,48 @@ class FurnaceModule:
                 self.__sample_ptr = pointers
             elif element_type == 7:  # PATN
                 self.__pattern_ptr = pointers
-            # other elements (asset dirs, compat flags, comments, grooves)
-            # are irrelevant to the SPC converter.
+            elif element_type == 8:  # CFLG
+                self.__compat_flag_ptr = pointers
+            # other elements (asset dirs, comments, grooves) are irrelevant
+            # to the SPC converter.
+
+        if self.__compat_flag_ptr and self.__compat_flag_ptr[0] != 0:
+            self.__read_compat_flags_config(stream, self.__compat_flag_ptr[0])
+
+    def __read_compat_flags_config(self, stream: BinaryIO, pointer: int) -> None:
+        """
+        Read the DivConfig-style CFLG block used from format version 240.
+        Only the flags that affect the SPC pitch engine are consumed; the
+        remaining values keep the version-derived defaults.
+        """
+        stream.seek(pointer)
+        if stream.read(4) != b'CFLG':
+            raise ValueError('No "CFLG" magic')
+        block = BytesIO(stream.read(read_int(stream)))
+        for line in read_str(block).splitlines():
+            line = line.strip()
+            if not line or '=' not in line:
+                continue
+            key, value = line.split('=', 1)
+            value = value.strip()
+
+            def as_int(raw: str) -> int:
+                lowered = raw.lower()
+                if lowered == 'true':
+                    return 1
+                if lowered == 'false':
+                    return 0
+                return int(raw)
+
+            if key == 'linearPitch':
+                # 0 is non-linear; 1/2 both mean full linear after dev237.
+                self.compat_flags.linear_pitch = (
+                    LinearPitch.NON_LINEAR if as_int(value) == 0 else LinearPitch.FULL_LINEAR
+                )
+            elif key == 'pitchSlideSpeed':
+                self.compat_flags.pitch_slide_speed_in_linear = as_int(value)
+            elif key == 'limitSlides':
+                self.compat_flags.limit_slides = bool(as_int(value))
 
     def __read_instruments(self, stream: BinaryIO) -> None:
         for i in self.__instrument_ptr:

@@ -1,9 +1,16 @@
 .setcpu "none"
 .include "spc-65c02.inc"
+.include "features.inc"
 
 .define loop_pattern_num 0
 .define porta_once 1
 .define SLIDE_SPEED 0
+
+.if LINEAR_PITCH
+  .define PORT_STEPS PITCH_SLIDE_SPEED-1
+.else
+  .define PORT_STEPS SLIDE_SPEED+1
+.endif
 
 ; 0: legacy method
 ; 1: non-legacy (MORE ACCURATE) method (still non-linear though)
@@ -100,6 +107,7 @@ vibrato_param: .res chnum
 vibrato_phase: .res chnum
 
 note_table_temp: .res 2
+lin_frac: .res 1
 
 inst_prev_note: .res chnum
 
@@ -121,7 +129,9 @@ PRODUCT: .res 6
 noise_freq: .res 1
 noise_mask: .res 1
 pmod_mask: .res 1
+.if ECHO_ENABLE
 echo_mask: .res 1
+.endif
 flags: .res 1
 do_port: .res chnum
 
@@ -140,15 +150,19 @@ mframeV: .res chnum
 mframeA: .res chnum
 mframeS: .res chnum
 mframeD: .res chnum
+.if PAN_ENABLE
 mframePL: .res chnum
 mframePR: .res chnum
+.endif
 mframeN: .res 1
 doMacroV: .res chnum
 doMacroA: .res chnum
 doMacroS: .res chnum
 doMacroD: .res chnum
+.if PAN_ENABLE
 doMacroPL: .res chnum
 doMacroPR: .res chnum
+.endif
 doMacroN: .res 1
 insN: .res 1
 
@@ -168,8 +182,10 @@ volm: .res chnum
 volout: .res chnum
 voloutl: .res chnum
 voloutr: .res chnum
+.if PAN_ENABLE
 panl: .res chnum
 panr: .res chnum
+.endif
 
 ins: .res chnum
 inst_prev: .res chnum
@@ -361,8 +377,13 @@ table_fil:
   stya DSPADDR
 
   ; Disable the APU features we're not using
+.if ECHO_ENABLE
   ldy echo_info
   sty flags
+.else
+  lda #32
+  sta flags
+.endif
   lda #DSP_FLAGS
   stya DSPADDR
   ldy #$00
@@ -379,12 +400,16 @@ table_fil:
   ldy #%00000000
   sty noise_mask
   sty pmod_mask
+.if ECHO_ENABLE
   sty echo_mask
+.endif
   lda #DSP_NOISECH  ; LFSR noise on no channels
   stya DSPADDR
+.if ECHO_ENABLE
   ldy #0
   lda #DSP_ECHOCH  ; Echo on no channels
   stya DSPADDR
+.endif
 
   lda #DSP_KEYOFF
   ldy #0
@@ -396,6 +421,7 @@ table_fil:
   ldy #>sample_dir
   stya DSPADDR
 
+.if ECHO_ENABLE
   lda echo_info
   and #32
   bne skip_echo
@@ -431,8 +457,8 @@ table_fil:
   ldy echo_info+2
   lda #DSP_RECHOVOL  ; overall output volume right
   stya DSPADDR
-
 skip_echo:
+.endif
 
   lda #8000/TIMER_HZ  ; S-Pently will use 125 Hz
   sta TIMERPERIOD
@@ -458,8 +484,10 @@ init_chan_loop:
   lda #$7f
   sta vol, x
   sta volm, x
+.if PAN_ENABLE
   sta panl, x
   sta panr, x
+.endif
   lda #$80
   sta finepitch, x
   lda #1
@@ -488,14 +516,18 @@ init_chan_loop:
   sta mframeD, x
   sta mframeS, x
   sta mframeV, x
+.if PAN_ENABLE
   sta mframePL, x
   sta mframePR, x
+.endif
   sta doMacroA, x
   sta doMacroD, x
   sta doMacroS, x
   sta doMacroV, x
+.if PAN_ENABLE
   sta doMacroPL, x
   sta doMacroPR, x
+.endif
   sta sample_mapped, x
   lda #4
   sta note_tick, x
@@ -504,6 +536,7 @@ init_chan_loop:
   jmp init_chan_loop
 init_chan_done:
 
+.if ECHO_ENABLE
   ; initialize the EON register
   ldx #0
   ldy echo_info+14 ; echoMask
@@ -521,6 +554,7 @@ init_chan_done:
   inx
   cpx #chnum
   bne :-
+.endif
 
   ldx #0
   stx koff_mirror
@@ -606,11 +640,15 @@ effectE3:
   lda #$ff
   sta slide_amt_sign, x
   ldx ch
+.if LINEAR_PITCH
+  lda #95
+.else
   lda #88
+.endif
   sta note_dest, x
   lda #$ff
   sta didporta, x
-  lda #SLIDE_SPEED+1
+  lda #PORT_STEPS
   sta do_port, x
   jmp begnote
 .endmacro
@@ -623,11 +661,15 @@ effectE4:
   lda #$00
   sta slide_amt_sign, x
   ldx ch
+.if LINEAR_PITCH
+  lda #0
+.else
   lda #8
+.endif
   sta note_dest, x
   lda #$ff
   sta didporta, x
-  lda #SLIDE_SPEED+1
+  lda #PORT_STEPS
   sta do_port, x
   jmp begnote
 .endmacro
@@ -655,7 +697,7 @@ effectE5:
   sta slide_amt_sign, x
   lda #$ff
   sta didporta, x
-  lda #SLIDE_SPEED+1
+  lda #PORT_STEPS
   sta do_port, x
   jmp begnote
 :
@@ -663,7 +705,7 @@ effectE5:
   sta slide_amt_sign, x
   lda #$ff
   sta didporta, x
-  lda #SLIDE_SPEED+1
+  lda #PORT_STEPS
   sta do_port, x
   jmp begnote
 .endmacro
@@ -696,7 +738,7 @@ effectE9:
   sta note_dest, x
   lda #$ff
   sta didporta, x
-  lda #SLIDE_SPEED+1
+  lda #PORT_STEPS
   sta do_port, x
   jmp begnote
 .endmacro
@@ -717,7 +759,7 @@ effectEA:
   sta note_dest, x
   lda #$ff
   sta didporta, x
-  lda #SLIDE_SPEED+1
+  lda #PORT_STEPS
   sta do_port, x
   jmp begnote
 .endmacro
@@ -819,6 +861,7 @@ effectF5:
   jmp begnote
 .endmacro
 
+.if ECHO_TOGGLE
 .macro add_12xx
 effectF8:
   get_patzp
@@ -837,6 +880,7 @@ effectF8:
   sta echo_mask
   jmp begnote
 .endmacro
+.endif
 
 .macro add_1Dxx
 effectF6:
@@ -886,7 +930,9 @@ add_0Axx
 add_0Bxx
 add_10xx
 add_11xx
+.if ECHO_TOGGLE
 add_12xx
+.endif
 add_1Dxx
 add_E1xx
 add_E2xx
@@ -926,10 +972,12 @@ other_effects:
   sta mframeD, x
   lda insSrel, y
   sta mframeS, x
+.if PAN_ENABLE
   lda insPLrel, y
   sta mframePL, x
   lda insPRrel, y
   sta mframePR, x
+.endif
   ldx ch
   lda #$ff
   sta isoff, x
@@ -952,8 +1000,10 @@ other_effects:
   sta doMacroV, x
   sta doMacroD, x
   sta doMacroS, x
+.if PAN_ENABLE
   sta doMacroPL, x
   sta doMacroPR, x
+.endif
   lda #1
   sta dur, x
   ldy #0
@@ -977,6 +1027,7 @@ other_effects:
 effect_smc:
  jmp cont_advance
 
+.if PAN_ENABLE
 effectE7:
   get_patzp
   ldx ch
@@ -1001,6 +1052,11 @@ effectE8:
   lda temp
   sta panl, x
   jmp begnote
+.else
+effectE7:
+effectE8:
+  jmp begnote
+.endif
 
 
 effectF1:
@@ -1021,12 +1077,12 @@ effectF2:
   jmp begnote
 
 eff_lo:
-.repeat $19, I
+.repeat EFFECT_COUNT, I
     ; i use .ident to automatically make jump tables for effects
     .lobytes .ident(.concat ("effect", .sprintf("%02X",I+$e0)))
 .endrepeat
 eff_hi:
-.repeat $19, I
+.repeat EFFECT_COUNT, I
     ; i use .ident to automatically make jump tables for effects
     .hibytes .ident(.concat ("effect", .sprintf("%02X",I+$e0)))
 .endrepeat
@@ -1089,8 +1145,10 @@ cont_advance:
   sta mframeA, x
   sta mframeD, x
   sta mframeS, x
+.if PAN_ENABLE
   sta mframePL, x
   sta mframePR, x
+.endif
   sta isoff, x
   jsr on_ch
   lda #$ff
@@ -1098,8 +1156,10 @@ cont_advance:
   sta doMacroV, x
   sta doMacroD, x
   sta doMacroS, x
+.if PAN_ENABLE
   sta doMacroPL, x
   sta doMacroPR, x
+.endif
 
   lda ins, x
   tay
@@ -1353,6 +1413,7 @@ end:
 
 add_insspec
 
+.if PAN_ENABLE
 .macro add_inspanl
 inspanl:
   .local end, skip1, beg, done
@@ -1434,6 +1495,7 @@ end:
 .endmacro
 
 add_inspanr
+.endif
 
 .macro add_insnois
 insnois:
@@ -1492,7 +1554,151 @@ add_insnois
 .endmacro
 
 doFinePitch:
+.if LINEAR_PITCH
+  ; note_pitch holds an 8.7 fixed note; add fine pitch and vibrato in
+  ; 1/128 semitone units, then convert the result to a DSP pitch.
+  lda note_pitch_lo, x
+  sta temp
+  lda note_pitch_hi, x
+  sta temp+1
 
+  lda finepitch, x
+  sec
+  sbc #$80
+  sta temp+2
+  bmi fine_neg
+  clc
+  lda temp
+  adc temp+2
+  sta temp
+  lda temp+1
+  adc #0
+  sta temp+1
+  jmp fine_done
+fine_neg:
+  clc
+  lda temp
+  adc temp+2
+  sta temp
+  lda temp+1
+  adc #$ff
+  sta temp+1
+fine_done:
+
+  lda vibrato_param, x
+  beq no_lin_vib
+  jsr add_lin_vibrato
+no_lin_vib:
+
+  ; clamp to the range covered by the note table (0 to 96.992)
+  lda temp+1
+  bmi lin_clamp_zero
+  lda temp
+  lsr
+  lsr
+  lsr
+  lsr
+  lsr
+  lsr
+  lsr
+  sta temp+2
+  lda temp+1
+  asl
+  ora temp+2
+  cmp #97
+  bcc lin_coarse_ok
+  lda #$7f
+  sta temp
+  lda #$30
+  sta temp+1
+  jmp lin_coarse_ok
+lin_clamp_zero:
+  lda #0
+  sta temp
+  sta temp+1
+lin_coarse_ok:
+
+  lda temp
+  and #$7f
+  sta lin_frac
+  lda temp
+  lsr
+  lsr
+  lsr
+  lsr
+  lsr
+  lsr
+  lsr
+  sta temp+2
+  lda temp+1
+  asl
+  ora temp+2
+  tay
+  jsr gen_note_table_linear
+  lda note_table_temp
+  sta temp
+  lda note_table_temp+1
+  sta temp+1
+  rts
+
+add_lin_vibrato:
+  ; advance the 64-step vibrato phase by the high nibble (rate)
+  lda vibrato_param, x
+  lsr
+  lsr
+  lsr
+  lsr
+  clc
+  adc vibrato_phase, x
+  and #63
+  sta vibrato_phase, x
+  tay
+
+  ; signed sine sample, quantized to 16 levels for a compact lookup
+  lda lin_vib_sine, y
+  sta temp+2
+  bmi lin_vib_neg
+  jmp lin_vib_abs
+lin_vib_neg:
+  eor #$ff
+  clc
+  adc #1
+lin_vib_abs:
+  lsr
+  lsr
+  lsr
+  sta temp+3
+  lda vibrato_param, x
+  and #15
+  asl
+  asl
+  asl
+  asl
+  ora temp+3
+  tay
+  lda lin_vib_lookup, y
+  sta temp+3
+
+  lda temp+2
+  bmi lin_vib_sub
+  clc
+  lda temp
+  adc temp+3
+  sta temp
+  lda temp+1
+  adc #0
+  sta temp+1
+  rts
+lin_vib_sub:
+  sec
+  lda temp
+  sbc temp+3
+  sta temp
+  lda temp+1
+  sbc #0
+  sta temp+1
+  rts
+.else
   lda vibrato_param, x
   lsr
   lsr
@@ -1543,6 +1749,7 @@ doFinePitch:
 .endrepeat
 
   rts
+.endif
 
 .proc playaddr
   ldx tick_sel
@@ -1757,8 +1964,90 @@ slide_skip:
   dex
   bpl relslide_loop
 
-  ; now let's do the actual pitch sliding (non-linear atm)
+  ; now let's do the actual pitch sliding
 
+.if LINEAR_PITCH
+  ; Linear mode keeps slide_buffer as an 8.7 fixed-point note offset
+  ; (128 units per semitone) and compares fixed notes directly.
+  ldx #chnum-1
+slide_loop:
+  lda slide_amt, x
+  bne :+
+  jmp slide_loop2
+:
+  lda slide_amt_sign, x
+  bne positive_slide
+  jsr sub_pitch
+  jmp check_slide
+positive_slide:
+  jsr add_pitch
+check_slide:
+  ; temp = (note_n << 7) + slide_buffer
+  lda note_n, x
+  lsr a
+  sta temp+1
+  lda note_n, x
+  and #1
+  beq :+
+  lda #$80
+  :
+  sta temp
+  clc
+  lda temp
+  adc slide_buffer_lo, x
+  sta temp
+  lda temp+1
+  adc slide_buffer_hi, x
+  sta temp+1
+
+  ; patzp = note_dest << 7
+  lda note_dest, x
+  lsr a
+  sta patzp+1
+  lda note_dest, x
+  and #1
+  beq :+
+  lda #$80
+  :
+  sta patzp
+
+  ; compare current fixed note against target
+  lda temp+1
+  bmi slide_lt
+  cmp patzp+1
+  bcc slide_lt
+  bne slide_gt
+  lda temp
+  cmp patzp
+  bcc slide_lt
+  beq finish_slide
+
+slide_gt:
+  lda slide_amt_sign, x
+  bne finish_slide
+  jmp slide_loop2
+slide_lt:
+  lda slide_amt_sign, x
+  beq finish_slide
+  jmp slide_loop2
+
+finish_slide:
+  lda note_dest, x
+  sta note_n, x
+  lda #0
+  sta slide_buffer_lo, x
+  sta slide_buffer_hi, x
+  sta slide_amt, x
+  sta slide_amt_sign, x
+  sta do_port, x
+  jmp slide_loop2
+slide_loop2:
+  dex
+  bmi slide_loopt
+  jmp slide_loop
+slide_loopt:
+
+.else
   ldx #chnum-1
 slide_loop:
   lda slide_amt, x
@@ -1815,6 +2104,7 @@ slide_loop2:
   bmi slide_loopt
   jmp slide_loop
 slide_loopt:
+.endif
 
   ldx #chnum-1
 :
@@ -1834,13 +2124,52 @@ note_tick_loop:
   jsr insvol
   jsr insduty
   jsr insspec
+.if PAN_ENABLE
   jsr inspanl
   jsr inspanr
+.endif
 .endrepeat
   jsr insnois
 
   ; pitch bends go brr
   ldx #chnum-1
+.if LINEAR_PITCH
+note_loop:
+  lda absarp, x
+  beq nrel
+  lda arp, x
+  and #127
+  jmp nout
+nrel:
+  lda note_n, x
+  clc
+  adc arp, x
+nout:
+  clc
+  jsr add_arpeff
+  jsr clamp_note
+  sta note_nums, x
+
+  ; note_pitch = (note << 7) + slide_buffer, as an 8.7 fixed note
+  sta temp+2
+  lsr a
+  sta note_pitch_hi, x
+  lda temp+2
+  and #1
+  beq :+
+  lda #$80
+  :
+  sta note_pitch_lo, x
+  clc
+  lda note_pitch_lo, x
+  adc slide_buffer_lo, x
+  sta note_pitch_lo, x
+  lda note_pitch_hi, x
+  adc slide_buffer_hi, x
+  sta note_pitch_hi, x
+  dex
+  bpl note_loop
+.else
 note_loop:
   lda absarp, x
   beq nrel
@@ -1875,6 +2204,7 @@ nout:
   .endif
   dex
   bpl note_loop
+.endif
 
   ; calculate final volume from volume column and volume macros
   ldx #chnum-1
@@ -1886,6 +2216,7 @@ vol_loop:
   tya
   sta volout, x
 
+.if PAN_ENABLE
   stx xt
   tay
   lda panl, x
@@ -1903,6 +2234,11 @@ vol_loop:
   div ya, x
   ldx xt
   sta voloutr, x
+.else
+  lda volout, x
+  sta voloutl, x
+  sta voloutr, x
+.endif
   dex
   bpl vol_loop
 
@@ -2015,6 +2351,7 @@ vol_loop:
   sta DSPDATA
 
 
+.if ECHO_ENABLE
   lda #0
 .repeat 8, I
   pha
@@ -2031,6 +2368,7 @@ vol_loop:
   ldx #$4d
   stx DSPADDR
   sta DSPDATA
+.endif
 
   lda #0
 .repeat 7, I
@@ -2118,7 +2456,7 @@ note_table_lo:
 note_table_hi:
     .incbin "note_hi.bin"
 
-.if SLIDE_METHOD = 1
+.if (!LINEAR_PITCH) .and (SLIDE_METHOD = 1)
 gen_note_table_slide:
     sty PRODUCT+4
     stx PRODUCT+5
@@ -2193,6 +2531,7 @@ gen_note_table_slide:
 
 .endif
 
+.if !LINEAR_PITCH
 gen_note_table:
     sty PRODUCT+4
     stx PRODUCT+5
@@ -2240,9 +2579,96 @@ gen_note_table:
     pla
     ldy PRODUCT+4
     rts
+.endif
+
+.if LINEAR_PITCH
+gen_note_table_linear:
+    sty PRODUCT+4
+    stx PRODUCT+5
+    pha
+
+    ; T2 = note_table[Y]
+    lda note_table_lo, y
+    sta T2
+    lda note_table_hi, y
+    sta T2+1
+
+    ; diff = note_table[Y+1] - note_table[Y]
+    iny
+    lda note_table_lo, y
+    sec
+    sbc T2
+    sta T1
+    lda note_table_hi, y
+    sbc T2+1
+    sta T1+1
+
+    ; T2 += (diff * lin_frac) >> 7
+    lda T1
+    ldy lin_frac
+    mul ya
+    sta T1
+    sty T1+1
+
+    lda T1
+    lsr
+    lsr
+    lsr
+    lsr
+    lsr
+    lsr
+    lsr
+    sta T1
+    lda T1+1
+    asl
+    ora T1
+    sta T1
+    lda #0
+    sta T1+1
+
+    clc
+    lda T2
+    adc T1
+    sta T2
+    lda T2+1
+    adc T1+1
+    sta T2+1
+
+    ; scale the interpolated frequency by the sample's C-4 rate
+    lda wav_length, x
+    tay
+    lda insM, y
+    and #32
+    beq :+
+    lda insWLen, y
+    tay
+    lda insWAVRL, y
+    sta T1
+    lda insWAVRH, y
+    sta T1+1
+    jmp :++
+:
+    lda cursamp, x
+    tax
+    lda insPCMRL, x
+    sta T1
+    lda insPCMRH, x
+    sta T1+1
+:
+    jsr multiply_16bit_unsigned
+    ldx PRODUCT+5
+    lda PRODUCT+1
+    sta note_table_temp
+    lda PRODUCT+2
+    sta note_table_temp+1
+    pla
+    ldy PRODUCT+4
+    rts
+.endif
 
 
 
+.if !LINEAR_PITCH
 triangle_lookup:
   .repeat 64, I
     .if (I+0)&32
@@ -2259,6 +2685,22 @@ tri_vibrato_lookup:
       .byte ((I*((J<<1)-15)*4)/20)+$80
     .endrepeat
   .endrepeat
+.endif
+
+.if LINEAR_PITCH
+lin_vib_sine:
+  .byte 0, 12, 25, 37, 49, 60, 71, 81, 90, 98, 106, 112, 117, 122, 125, 126
+  .byte 127, 126, 125, 122, 117, 112, 106, 98, 90, 81, 71, 60, 49, 37, 25, 12
+  .byte 0, 244, 231, 219, 207, 196, 185, 175, 166, 158, 150, 144, 139, 134, 131, 130
+  .byte 129, 130, 131, 134, 139, 144, 150, 158, 166, 175, 185, 196, 207, 219, 231, 244
+
+lin_vib_lookup:
+  .repeat 16, J
+    .repeat 16, I
+      .byte ((J * (I*8+4)) >> 4) / 15
+    .endrepeat
+  .endrepeat
+.endif
 
 
 add_pitch:
