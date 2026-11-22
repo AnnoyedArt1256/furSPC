@@ -547,6 +547,7 @@ class OutputPortSet(EnumShowNameOnly):
     CHIP_30 = 29
     CHIP_31 = 30
     CHIP_32 = 31
+    REFERENCE = 0xFFC
     PREVIEW = 0xFFD
     METRONOME = 0xFFE
     NULL = 0xFFF

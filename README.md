@@ -9,7 +9,7 @@ FINALLY, an SNES driver that is not total dogwater to use!
 * You have to have [Python](https://www.python.org/) and the [CC65 toolchain](https://cc65.github.io/) installed
 * You **have** to set the pitch linearity option to "None". You can do this by going to `window -> song -> compatability flags -> Pitch/Playback -> Pitch linearity` and then setting the option to "None".
 
-* The driver only supports **volume, arpeggio, waveform, noise freq and special** macros in each instrument and it DOESN'T support LFO and ADSR macros nor delay and step length
+* The driver only supports **volume, arpeggio, waveform, panning (left/right), noise freq and special** macros in each instrument and it DOESN'T support LFO and ADSR macros nor delay and step length
 
 * MAKE SURE TO CONVERT ALL SAMPLES IN THE MODULE TO **BRR SAMPLES** BEFORE USING THE CONVERTER TOOL
  
@@ -19,6 +19,10 @@ FINALLY, an SNES driver that is not total dogwater to use!
   * 02xx: pitch slide down
   * 03xx: portamento
   * 04xx: vibrato
+  * 08xx: set panning
+  * 80xx: set panning (linear)
+  * 81xx: set panning left
+  * 82xx: set panning right
   * 09xx: set speed 1
   * 0Axx: volume slide
   * 0Bxx: jump to pattern
@@ -26,6 +30,7 @@ FINALLY, an SNES driver that is not total dogwater to use!
   * 0Fxx: set speed 2
   * 10xx: set waveform
   * 11xx: toggle noise mode
+  * 12xx: toggle echo on channel
   * 13xx: toggle pitch modulation
   * 1Dxx: set noise freq
   * E1xx: note slide up

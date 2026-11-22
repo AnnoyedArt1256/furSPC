@@ -121,6 +121,7 @@ PRODUCT: .res 6
 noise_freq: .res 1
 noise_mask: .res 1
 pmod_mask: .res 1
+echo_mask: .res 1
 flags: .res 1
 do_port: .res chnum
 
@@ -139,11 +140,15 @@ mframeV: .res chnum
 mframeA: .res chnum
 mframeS: .res chnum
 mframeD: .res chnum
+mframePL: .res chnum
+mframePR: .res chnum
 mframeN: .res 1
 doMacroV: .res chnum
 doMacroA: .res chnum
 doMacroS: .res chnum
 doMacroD: .res chnum
+doMacroPL: .res chnum
+doMacroPR: .res chnum
 doMacroN: .res 1
 insN: .res 1
 
@@ -161,6 +166,10 @@ isoff: .res chnum
 vol: .res chnum
 volm: .res chnum
 volout: .res chnum
+voloutl: .res chnum
+voloutr: .res chnum
+panl: .res chnum
+panr: .res chnum
 
 ins: .res chnum
 inst_prev: .res chnum
@@ -370,6 +379,7 @@ table_fil:
   ldy #%00000000
   sty noise_mask
   sty pmod_mask
+  sty echo_mask
   lda #DSP_NOISECH  ; LFSR noise on no channels
   stya DSPADDR
   ldy #0
@@ -444,10 +454,12 @@ skip_echo:
   sta mframeN
   sta delay_do
   ldx #chnum-1
-:
+init_chan_loop:
   lda #$7f
   sta vol, x
   sta volm, x
+  sta panl, x
+  sta panr, x
   lda #$80
   sta finepitch, x
   lda #1
@@ -476,15 +488,21 @@ skip_echo:
   sta mframeD, x
   sta mframeS, x
   sta mframeV, x
+  sta mframePL, x
+  sta mframePR, x
   sta doMacroA, x
   sta doMacroD, x
   sta doMacroS, x
   sta doMacroV, x
+  sta doMacroPL, x
+  sta doMacroPR, x
   sta sample_mapped, x
   lda #4
   sta note_tick, x
   dex
-  bpl :-
+  bmi init_chan_done
+  jmp init_chan_loop
+init_chan_done:
 
   ; initialize the EON register
   ldx #0
@@ -801,6 +819,25 @@ effectF5:
   jmp begnote
 .endmacro
 
+.macro add_12xx
+effectF8:
+  get_patzp
+  ldx ch
+  and #1
+  cmp #1
+  beq :+
+
+  lda echo_mask
+  and kon_table+8, x
+  sta echo_mask
+  jmp begnote
+:
+  lda echo_mask
+  ora kon_table, x
+  sta echo_mask
+  jmp begnote
+.endmacro
+
 .macro add_1Dxx
 effectF6:
   get_patzp
@@ -849,6 +886,7 @@ add_0Axx
 add_0Bxx
 add_10xx
 add_11xx
+add_12xx
 add_1Dxx
 add_E1xx
 add_E2xx
@@ -888,6 +926,10 @@ other_effects:
   sta mframeD, x
   lda insSrel, y
   sta mframeS, x
+  lda insPLrel, y
+  sta mframePL, x
+  lda insPRrel, y
+  sta mframePR, x
   ldx ch
   lda #$ff
   sta isoff, x
@@ -910,6 +952,8 @@ other_effects:
   sta doMacroV, x
   sta doMacroD, x
   sta doMacroS, x
+  sta doMacroPL, x
+  sta doMacroPR, x
   lda #1
   sta dur, x
   ldy #0
@@ -934,8 +978,29 @@ effect_smc:
  jmp cont_advance
 
 effectE7:
+  get_patzp
+  ldx ch
+  sta panl, x
+  ldy #0
+  get_patzp
+  ldx ch
+  sta panr, x
+  jmp begnote
+
 effectE8:
- jmp cont_advance
+  get_patzp
+  sta temp
+  ldx ch
+  and #$80
+  beq :+
+  lda temp
+  and #$7f
+  sta panr, x
+  jmp begnote
+:
+  lda temp
+  sta panl, x
+  jmp begnote
 
 
 effectF1:
@@ -956,12 +1021,12 @@ effectF2:
   jmp begnote
 
 eff_lo:
-.repeat $18, I
+.repeat $19, I
     ; i use .ident to automatically make jump tables for effects
     .lobytes .ident(.concat ("effect", .sprintf("%02X",I+$e0)))
 .endrepeat
 eff_hi:
-.repeat $18, I
+.repeat $19, I
     ; i use .ident to automatically make jump tables for effects
     .hibytes .ident(.concat ("effect", .sprintf("%02X",I+$e0)))
 .endrepeat
@@ -1024,6 +1089,8 @@ cont_advance:
   sta mframeA, x
   sta mframeD, x
   sta mframeS, x
+  sta mframePL, x
+  sta mframePR, x
   sta isoff, x
   jsr on_ch
   lda #$ff
@@ -1031,6 +1098,8 @@ cont_advance:
   sta doMacroV, x
   sta doMacroD, x
   sta doMacroS, x
+  sta doMacroPL, x
+  sta doMacroPR, x
 
   lda ins, x
   tay
@@ -1284,6 +1353,87 @@ end:
 
 add_insspec
 
+.macro add_inspanl
+inspanl:
+  .local end, skip1, beg, done
+beg:
+  ldx ch
+  lda doMacroPL, x
+  beq end
+
+  lda ins, x
+  tay
+  lda insPLL, y
+  sta macroIns
+  lda insPLH, y
+  sta macroIns+1
+  lda mframePL, x
+  tay
+  ldya macroIns
+  sta temp
+  cmp #$ff
+  bne skip1
+  iny
+  ldya macroIns
+  cmp #$ff
+  beq done
+  sta mframePL, x
+  jmp beg
+done:
+  lda #0
+  sta doMacroPL, x
+  rts
+skip1:
+  lda temp
+  ldx ch
+  sta panl, x
+  incx mframePL
+end:
+  rts
+.endmacro
+
+add_inspanl
+
+.macro add_inspanr
+inspanr:
+  .local end, skip1, beg, done
+beg:
+  ldx ch
+  lda doMacroPR, x
+  beq end
+
+  lda ins, x
+  tay
+  lda insPRL, y
+  sta macroIns
+  lda insPRH, y
+  sta macroIns+1
+  lda mframePR, x
+  tay
+  ldya macroIns
+  sta temp
+  cmp #$ff
+  bne skip1
+  iny
+  ldya macroIns
+  cmp #$ff
+  beq done
+  sta mframePR, x
+  jmp beg
+done:
+  lda #0
+  sta doMacroPR, x
+  rts
+skip1:
+  lda temp
+  ldx ch
+  sta panr, x
+  incx mframePR
+end:
+  rts
+.endmacro
+
+add_inspanr
 
 .macro add_insnois
 insnois:
@@ -1684,6 +1834,8 @@ note_tick_loop:
   jsr insvol
   jsr insduty
   jsr insspec
+  jsr inspanl
+  jsr inspanr
 .endrepeat
   jsr insnois
 
@@ -1733,6 +1885,24 @@ vol_loop:
   mul ya
   tya
   sta volout, x
+
+  stx xt
+  tay
+  lda panl, x
+  mul ya
+  ldx #127
+  div ya, x
+  ldx xt
+  sta voloutl, x
+
+  lda volout, x
+  tay
+  lda panr, x
+  mul ya
+  ldx #127
+  div ya, x
+  ldx xt
+  sta voloutr, x
   dex
   bpl vol_loop
 
@@ -1769,12 +1939,13 @@ vol_loop:
 .repeat 8, I
   ldx #I
   jsr doFinePitch
-  lda volout+I
   ldx #I<<4
   stx DSPADDR
+  lda voloutl+I
   sta DSPDATA  
   inx
   stx DSPADDR
+  lda voloutr+I
   sta DSPDATA  
   lda temp
   inx
@@ -1856,6 +2027,7 @@ vol_loop:
   ora #1<<I
 :
 .endrepeat
+  ora echo_mask
   ldx #$4d
   stx DSPADDR
   sta DSPDATA

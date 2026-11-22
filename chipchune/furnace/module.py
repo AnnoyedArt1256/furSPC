@@ -20,6 +20,19 @@ MAGIC_STR = b'-Furnace module-'
 MAX_CHIPS = 32
 
 
+def _decompress_fur(data: bytes) -> bytes:
+    """
+    Decompress a Furnace module. Furnace writes zlib streams, but accept
+    gzip (and raw deflate) as well so renamed .fur.gz files keep working.
+    """
+    for wbits in (zlib.MAX_WBITS | 32, -zlib.MAX_WBITS):
+        try:
+            return zlib.decompress(data, wbits)
+        except zlib.error:
+            pass
+    raise ValueError('Compressed .fur is not zlib, gzip or raw deflate data')
+
+
 class FurnaceModule:
     """
     Represents a Furnace .fur file.
@@ -78,6 +91,11 @@ class FurnaceModule:
 
         self.samples: List[FurnaceWavetable] = []
 
+        self.__num_channels: Optional[int] = None
+        """
+        Total channel count from an INF2 header. None for the old INFO format.
+        """
+
         if isinstance(file_name_or_stream, BufferedReader):
             self.load_from_stream(file_name_or_stream)
         elif isinstance(file_name_or_stream, str):
@@ -94,18 +112,15 @@ class FurnaceModule:
         if self.file_name is None:
             raise RuntimeError('No file name set, either set self.file_name or pass file_name to the function')
         with open(self.file_name, 'rb') as f:
-            detect_magic = f.peek(len(MAGIC_STR))[:len(MAGIC_STR)]
-            if detect_magic != MAGIC_STR:  # this is probably compressed, so try decompressing it first
-                return self.load_from_bytes(
-                    zlib.decompress(f.read())
-                )
-            else:  # uncompressed for sure
-                return self.load_from_stream(f)
+            data = f.read()
+        if data[:len(MAGIC_STR)] != MAGIC_STR:
+            data = _decompress_fur(data)
+        return self.load_from_stream(BytesIO(data))
 
     @staticmethod
     def decompress_to_file(in_name: str, out_name: str) -> int:
         """
-        Simple zlib wrapper. Decompresses a zlib-compressed .fur
+        Decompress a compressed .fur (zlib, gzip or raw deflate)
         from in_name to out_name. Does not need instantiation.
 
         :param in_name: input file name
@@ -113,15 +128,20 @@ class FurnaceModule:
         :return: Results of file.write().
         """
         with open(in_name, 'rb') as fi:
-            with open(out_name, 'wb') as fo:
-                return fo.write(zlib.decompress(fi.read()))
+            data = fi.read()
+        if data[:len(MAGIC_STR)] != MAGIC_STR:
+            data = _decompress_fur(data)
+        with open(out_name, 'wb') as fo:
+            return fo.write(data)
 
     def load_from_bytes(self, data: bytes) -> None:
         """
-        Load a module from a series of bytes.
+        Load a module from a series of bytes. Compressed data is accepted too.
 
         :param data: Bytes
         """
+        if data[:len(MAGIC_STR)] != MAGIC_STR:
+            data = _decompress_fur(data)
         return self.load_from_stream(
             BytesIO(data)
         )
@@ -141,6 +161,7 @@ class FurnaceModule:
         self.patchbay.clear()
         self.subsongs[0].order.clear()
         self.subsongs[0].speed_pattern.clear()
+        self.__num_channels = None
 
         self.__read_header(stream)
         self.__init_compat_flags()
@@ -160,6 +181,8 @@ class FurnaceModule:
 
         :return: Channel sum across all chips.
         """
+        if self.__num_channels is not None:
+            return self.__num_channels
         num_channels = 0
         for chip in self.chips.list:
             num_channels += chip.type.channels
@@ -475,7 +498,7 @@ class FurnaceModule:
     def __read_dev119_chip_flags(self, stream: BinaryIO) -> None:
         for i in range(len(self.chips.list)):
             # skip if this chip doesn't have flags
-            if self.__chip_flag_ptr[i] == 0:
+            if i >= len(self.__chip_flag_ptr) or self.__chip_flag_ptr[i] == 0:
                 continue
             stream.seek(self.__chip_flag_ptr[i])
 
@@ -644,8 +667,11 @@ class FurnaceModule:
 
     def __read_info(self, stream: BinaryIO) -> None:
         stream.seek(self.__song_info_ptr)
-        if stream.read(4) != b'INFO':
-            raise ValueError('No "INFO" magic')
+        info_magic = stream.read(4)
+        if info_magic == b'INF2' and self.meta.version >= 240:
+            return self.__read_info_inf2(stream)
+        if info_magic != b'INFO':
+            raise ValueError('No "INFO"/"INF2" magic')
 
         if self.meta.version < 100:  # don't read size prior to 0.6pre1
             stream.read(4)
@@ -848,6 +874,100 @@ class FurnaceModule:
                 ])
                 info_blk.read(16 - len_groove)  # TODO: i assume the same as above. i hope i'm right
 
+    def __read_info_inf2(self, stream: BinaryIO) -> None:
+        """
+        Read the song info header used by format version 240 and later.
+        Furnace dev240 replaced the old "INFO" block with "INF2"; it also
+        moved instrument/pattern/subsong/chip-flag blocks behind element
+        pointers, so collect those pointers here.
+        """
+        info_blk = BytesIO(stream.read(read_int(stream)))
+
+        self.meta.name = read_str(info_blk)
+        self.meta.author = read_str(info_blk)
+        self.meta.sys_name = read_str(info_blk)
+        self.meta.album = read_str(info_blk)
+        self.meta.name_jp = read_str(info_blk)
+        self.meta.author_jp = read_str(info_blk)
+        self.meta.sys_name_jp = read_str(info_blk)
+        self.meta.album_jp = read_str(info_blk)
+        self.meta.tuning = read_float(info_blk)
+        info_blk.read(1)  # automatic system name
+
+        self.chips.master_volume = read_float(info_blk)
+        num_channels = read_short(info_blk)
+        num_chips = read_short(info_blk)
+        if num_chips < 1 or num_chips > MAX_CHIPS:
+            raise ValueError('Invalid chip count in INF2 header')
+
+        channel_total = 0
+        for _ in range(num_chips):
+            chip_id = read_short(info_blk)
+            chip_channels = read_short(info_blk)
+            if chip_channels < 1:
+                raise ValueError('Invalid chip channel count in INF2 header')
+            try:
+                chip_type = ChipType(chip_id)
+            except ValueError as exc:
+                raise ValueError('Unsupported chip ID 0x%04x' % chip_id) from exc
+            chip = ChipInfo(chip_type)
+            chip.volume = read_float(info_blk)
+            chip.panning = read_float(info_blk)
+            chip.surround = read_float(info_blk)
+            self.chips.list.append(chip)
+            channel_total += chip_channels
+
+        if channel_total != num_channels:
+            raise ValueError('INF2 channel count does not match chip channel counts')
+        self.__num_channels = num_channels
+
+        num_patchbay_connections = read_int(info_blk)
+        for _ in range(num_patchbay_connections):
+            connection = read_int(info_blk)
+            src = connection >> 16
+            dst = connection & 0xffff
+            self.patchbay.append(
+                PatchBay(
+                    dest=InputPatchBayEntry(
+                        set=InputPortSet(dst >> 4),
+                        port=dst & 0b1111
+                    ),
+                    source=OutputPatchBayEntry(
+                        set=OutputPortSet(src >> 4),
+                        port=src & 0b1111
+                    )
+                )
+            )
+        self.compat_flags.auto_patchbay = bool(read_byte(info_blk))
+
+        # song elements (pointers are absolute file offsets)
+        self.__subsong_ptr: List[int] = []
+        self.__chip_flag_ptr: List[int] = []
+        self.__instrument_ptr: List[int] = []
+        self.__wavetable_ptr: List[int] = []
+        self.__sample_ptr: List[int] = []
+        self.__pattern_ptr: List[int] = []
+        while True:
+            element_type = read_byte(info_blk)
+            if element_type == 0:
+                break
+            num_elements = read_int(info_blk)
+            pointers = [read_int(info_blk) for _ in range(num_elements)]
+            if element_type == 1:  # SNG2
+                self.__subsong_ptr = pointers
+            elif element_type == 2:  # FLAG
+                self.__chip_flag_ptr = pointers
+            elif element_type == 4:  # INS2
+                self.__instrument_ptr = pointers
+            elif element_type == 5:  # WAVE
+                self.__wavetable_ptr = pointers
+            elif element_type == 6:  # SMP2
+                self.__sample_ptr = pointers
+            elif element_type == 7:  # PATN
+                self.__pattern_ptr = pointers
+            # other elements (asset dirs, compat flags, comments, grooves)
+            # are irrelevant to the SPC converter.
+
     def __read_instruments(self, stream: BinaryIO) -> None:
         for i in self.__instrument_ptr:
             if i == 0:
@@ -936,6 +1056,11 @@ class FurnaceModule:
                 new_patr.channel = read_byte(patr_blk)
                 new_patr.index = read_short(patr_blk)
                 new_patr.name = read_str(patr_blk)
+
+                # The SPC converter only renders the main song. Ignore
+                # patterns belonging to any additional subsong.
+                if new_patr.subsong >= len(self.subsongs):
+                    continue
 
                 num_rows = self.subsongs[new_patr.subsong].pattern_length
                 effect_columns = self.subsongs[new_patr.subsong].effect_columns[new_patr.channel]
@@ -1037,6 +1162,8 @@ class FurnaceModule:
             self.patterns.append(new_patr)
 
     def __read_subsongs(self, stream: BinaryIO) -> None:
+        if self.meta.version >= 240:
+            return self.__read_sng2_main_subsong(stream)
         for i in self.__subsong_ptr:
             if i == 0:
                 break
@@ -1104,6 +1231,79 @@ class FurnaceModule:
                 ]
 
             self.subsongs.append(new_subsong)
+
+    def __read_sng2_main_subsong(self, stream: BinaryIO) -> None:
+        """
+        Read the first SNG2 block (the main song). Additional subsongs are
+        intentionally ignored by the SPC converter.
+        """
+        if not self.__subsong_ptr or self.__subsong_ptr[0] == 0:
+            raise ValueError('No main "SNG2" subsong in INF2 module')
+        stream.seek(self.__subsong_ptr[0])
+        if stream.read(4) != b'SNG2':
+            raise ValueError('No "SNG2" magic')
+        subsong_blk = BytesIO(stream.read(read_int(stream)))
+
+        new_subsong = self.subsongs[0]
+        new_subsong.order.clear()
+        new_subsong.speed_pattern.clear()
+        new_subsong.grooves.clear()
+
+        new_subsong.timing.clock_speed = read_float(subsong_blk)
+        new_subsong.timing.arp_speed = read_byte(subsong_blk)
+        subsong_blk.read(1)  # effect speed divider
+        new_subsong.pattern_length = read_short(subsong_blk)
+        new_subsong_len_orders = read_short(subsong_blk)
+        new_subsong.timing.highlight = (
+            read_byte(subsong_blk), read_byte(subsong_blk)
+        )
+        new_subsong.timing.virtual_tempo = (
+            read_short(subsong_blk), read_short(subsong_blk)
+        )
+
+        len_speed_pattern = read_byte(subsong_blk)
+        if len_speed_pattern < 1 or len_speed_pattern > 16:
+            raise ValueError('Invalid speed pattern length value')
+        speed_pattern = [read_short(subsong_blk) for _ in range(16)]
+        new_subsong.speed_pattern = speed_pattern[:len_speed_pattern]
+        new_subsong.timing.speed = (
+            speed_pattern[0],
+            speed_pattern[1] if len_speed_pattern > 1 else speed_pattern[0]
+        )
+
+        new_subsong.name = read_str(subsong_blk)
+        new_subsong.comment = read_str(subsong_blk)
+
+        num_channels = self.get_num_channels()
+
+        for channel in range(num_channels):
+            new_subsong.order[channel] = [
+                read_byte(subsong_blk) for _ in range(new_subsong_len_orders)
+            ]
+
+        new_subsong.effect_columns = [
+            read_byte(subsong_blk) for _ in range(num_channels)
+        ]
+
+        new_subsong.channel_display = [
+            ChannelDisplayInfo() for _ in range(num_channels)
+        ]
+
+        for i in range(num_channels):
+            # bit 0 is "shown", bit 1 is channel oscilloscope visibility
+            new_subsong.channel_display[i].shown = bool(read_byte(subsong_blk) & 1)
+
+        for i in range(num_channels):
+            new_subsong.channel_display[i].collapsed = bool(read_byte(subsong_blk))
+
+        for i in range(num_channels):
+            new_subsong.channel_display[i].name = read_str(subsong_blk)
+
+        for i in range(num_channels):
+            new_subsong.channel_display[i].abbreviation = read_str(subsong_blk)
+
+        for i in range(num_channels):
+            read_int(subsong_blk)  # channel color (ABGR)
 
     def __str__(self) -> str:
         return '<Furnace ver. %d module "%s" by %s>' % (
