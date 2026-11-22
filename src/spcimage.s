@@ -121,6 +121,7 @@ PRODUCT: .res 6
 noise_freq: .res 1
 noise_mask: .res 1
 pmod_mask: .res 1
+echo_mask: .res 1
 flags: .res 1
 do_port: .res chnum
 
@@ -378,6 +379,7 @@ table_fil:
   ldy #%00000000
   sty noise_mask
   sty pmod_mask
+  sty echo_mask
   lda #DSP_NOISECH  ; LFSR noise on no channels
   stya DSPADDR
   ldy #0
@@ -817,6 +819,25 @@ effectF5:
   jmp begnote
 .endmacro
 
+.macro add_12xx
+effectF8:
+  get_patzp
+  ldx ch
+  and #1
+  cmp #1
+  beq :+
+
+  lda echo_mask
+  and kon_table+8, x
+  sta echo_mask
+  jmp begnote
+:
+  lda echo_mask
+  ora kon_table, x
+  sta echo_mask
+  jmp begnote
+.endmacro
+
 .macro add_1Dxx
 effectF6:
   get_patzp
@@ -865,6 +886,7 @@ add_0Axx
 add_0Bxx
 add_10xx
 add_11xx
+add_12xx
 add_1Dxx
 add_E1xx
 add_E2xx
@@ -999,12 +1021,12 @@ effectF2:
   jmp begnote
 
 eff_lo:
-.repeat $18, I
+.repeat $19, I
     ; i use .ident to automatically make jump tables for effects
     .lobytes .ident(.concat ("effect", .sprintf("%02X",I+$e0)))
 .endrepeat
 eff_hi:
-.repeat $18, I
+.repeat $19, I
     ; i use .ident to automatically make jump tables for effects
     .hibytes .ident(.concat ("effect", .sprintf("%02X",I+$e0)))
 .endrepeat
@@ -2005,6 +2027,7 @@ vol_loop:
   ora #1<<I
 :
 .endrepeat
+  ora echo_mask
   ldx #$4d
   stx DSPADDR
   sta DSPDATA

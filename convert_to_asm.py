@@ -52,6 +52,7 @@ def comp(pat):
         elif pat[i] == 0xF5: i += 2
         elif pat[i] == 0xF6: i += 2
         elif pat[i] == 0xF7: i += 3
+        elif pat[i] == 0xF8: i += 2
         elif pat[i] == 0xFF: i += 2
         elif pat[i] == 0xFD:
             i += 1
@@ -245,6 +246,11 @@ def conv_pattern(pattern):
             if k[0] == 0x11:
                 new_byte = 1
                 temp.extend([0xF5,k[1]])
+                continue
+            if k[0] == 0x12:
+                # 12xx: toggle this channel's EON bit
+                new_byte = 1
+                temp.extend([0xF8,k[1]])
                 continue
             if k[0] == 0x1D:
                 new_byte = 1

@@ -30,6 +30,7 @@ FINALLY, an SNES driver that is not total dogwater to use!
   * 0Fxx: set speed 2
   * 10xx: set waveform
   * 11xx: toggle noise mode
+  * 12xx: toggle echo on channel
   * 13xx: toggle pitch modulation
   * 1Dxx: set noise freq
   * E1xx: note slide up
