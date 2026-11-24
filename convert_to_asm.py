@@ -1,5 +1,5 @@
 from chipchune.furnace.module import FurnaceModule
-from chipchune.furnace.data_types import InsFeatureMacro, InsFeatureSNES, InsFeatureAmiga
+from chipchune.furnace.data_types import InsFeatureMacro, InsFeatureSNES, InsFeatureAmiga, InsFeatureWaveSynth
 from chipchune.furnace.enums import MacroCode, MacroItem, MacroType
 from chipchune.furnace.enums import InstrumentType, SNESSusMode
 import sys, math
@@ -571,23 +571,60 @@ for i in range(len(module.instruments)):
     )
 
     use_wave = False
+    default_wave = 0
     f.write("ins"+str(i)+"W:\n")
     for j in a:
-        if j.use_wave:
+        if j.use_wave and len(module.wavetables) > 0:
+            synth = None
+            macros = None
+            for feature in features:
+                if type(feature) == InsFeatureWaveSynth:
+                    synth = feature
+                elif type(feature) == InsFeatureMacro:
+                    macros = feature
+
+            # Use only the wavetables the instrument actually selects.
+            # Furnace's synthesizer animation is not emulated; the selected
+            # source waveform is emitted as a looping BRR wavetable.
+            used_waves = []
+            if synth is not None and synth.enabled:
+                for w in synth.wave_indices:
+                    if 0 <= w < len(module.wavetables) and w not in used_waves:
+                        used_waves.append(w)
+            if macros is not None:
+                for macro in macros.macros:
+                    if macro.kind != MacroCode.WAVE:
+                        continue
+                    for value in macro.data:
+                        if isinstance(value, int) and 0 <= value < len(module.wavetables) and value not in used_waves:
+                            used_waves.append(value)
+            if not used_waves:
+                used_waves.append(0)
+
+            if synth is not None and synth.enabled and 0 <= synth.wave_indices[0] < len(module.wavetables):
+                default_wave = synth.wave_indices[0]
+            else:
+                default_wave = used_waves[0]
+
+            wl = max(16, min(256, ((j.wave_len+1)>>4)<<4))
+            wav_lens.append(wl)
+
+            # The pointer array is indexed by the raw wave macro value, so
+            # keep one entry per module wavetable. Unused entries point at
+            # the first selected wave.
             f.write(".addr ")
             for m in range(len(module.wavetables)):
-                f.write("ins"+str(i)+"W"+str(m))
+                f.write("ins"+str(i)+"W"+str(m if m in used_waves else used_waves[0]))
                 if m == (len(module.wavetables)-1):
                     f.write("\n")
                 else:
                     f.write(", ")
-            wl = ((j.wave_len+1)>>4)<<4
-            wav_lens.append(wl)
+
             l = []
             for k in range(wl):
                 fp = (k/(wl-1))*127
                 l.append(math.floor(fp))
-            for m in range(len(module.wavetables)):
+            for m in used_waves:
                 o = []
                 for p in range(len(l)>>4):
                     o.append(0xb0)
@@ -663,7 +700,7 @@ for i in range(len(module.instruments)):
         ), features
     )
     arp = [128,0xFF,0xFF]
-    duty = [0xFF,0xFF]
+    duty = [default_wave, 0xFF, 0xFF]
     vol = [0x7F,0xFF,0xFF]
     special = [0xFF,0xFF]
     noise = [0xFF,0xFF]
