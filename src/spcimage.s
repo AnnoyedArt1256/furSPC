@@ -86,6 +86,7 @@ sample_mapped: .res chnum
 
 kon_mirror: .res 1
 koff_mirror: .res 1
+rel_pending: .res 1
 
 patzp: .res 4
 
@@ -227,10 +228,10 @@ on_ch:
     lda kon_mirror
     ora kon_table, x
     sta kon_mirror
-    lda koff_mirror
-    ora kon_table, x
-    sta koff_mirror
     stx xt
+    lda rel_pending
+    and kon_table+8, x
+    sta rel_pending
     lda ins, x
     sta wav_length, x
     tax
@@ -338,19 +339,9 @@ on_skip2:
 skip2:
 .if SNES_ENV_REL
     ldx xt
-    lda ins, x
-    tay
-    lda insEL, y
-    sta temp+2
-    lda insEH, y
-    sta temp+3
-    txa
-    xcn a
-    ora #6
-    sta DSPADDR
-    ldy #2
-    ldya temp+2
-    sta DSPDATA
+    lda rel_pending
+    ora kon_table, x
+    sta rel_pending
 .endif
 skip3:
 skip:
@@ -358,6 +349,66 @@ skip:
     ldy yt
     pla
 .endmacro
+
+write_rel:
+  lda ins, x
+  tay
+  lda insEL, y
+  sta temp+2
+  lda insEH, y
+  sta temp+3
+  txa
+  xcn a
+  ora #6
+  sta DSPADDR
+  ldy #2
+  ldya temp+2
+  sta DSPDATA
+  rts
+
+flush_rel:
+  lda rel_pending
+  beq flush_done
+  ldx #chnum-1
+flush_loop:
+  lda rel_pending
+  and kon_table, x
+  beq flush_next
+  lda ins, x
+  tay
+  lda insEL, y
+  sta temp+2
+  lda insEH, y
+  sta temp+3
+  ldy #1
+  ldya temp+2
+  lsr a
+  sta temp
+  txa
+  xcn a
+  ora #8
+  sta DSPADDR
+  lda DSPDATA
+  sta temp+4
+  cmp temp
+  bcc flush_next
+  lda temp
+  ora #$0f
+  sta temp
+  lda temp+4
+  cmp temp
+  beq flush_do
+  bcs flush_next
+flush_do:
+  jsr write_rel
+  lda rel_pending
+  eor kon_table, x
+  sta rel_pending
+flush_next:
+  dex
+  bpl flush_loop
+flush_done:
+  rts
 
 off_ch:
   add_off_ch
@@ -565,6 +616,7 @@ init_chan_done:
 
   ldx #0
   stx koff_mirror
+  stx rel_pending
   stx patind
   jsr set_patseq
   ldx #chnum-1
@@ -2431,6 +2483,8 @@ vol_loop:
   ldx #$2d
   stx DSPADDR
   sta DSPDATA
+
+  jsr flush_rel
 
   rts
 .endproc
