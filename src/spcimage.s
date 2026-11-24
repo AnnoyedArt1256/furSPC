@@ -244,6 +244,7 @@ on_ch:
 @skip:
 
     ldx xt
+.if SNES_ENV_GAIN
     lda ins, x
     tax
     lda insM, x
@@ -276,8 +277,8 @@ on_ch:
     ldya temp+2
     stx DSPADDR
     sta DSPDATA
-
 on_skip2:
+.endif
     ldx xt
     lda #$ff
     sta sample_mapped, x
@@ -293,6 +294,7 @@ on_skip2:
     tax
     lda insM, x
     and #3
+.if SNES_ENV_DIRECT
     cmp #0
     bne :+
     ldx xt
@@ -301,11 +303,13 @@ on_skip2:
     sta koff_mirror
     jmp skip
 :
-    lda insM, x
-    and #3
+.endif
+.if SNES_ENV_REL
     cmp #1
     beq skip2
+.endif
 
+.if SNES_ENV_DEC || SNES_ENV_EXP || SNES_ENV_GAIN
     ldx xt
 
     lda ins, x
@@ -330,7 +334,9 @@ on_skip2:
     sta DSPDATA
 
     jmp skip3
+.endif
 skip2:
+.if SNES_ENV_REL
     ldx xt
     lda ins, x
     tay
@@ -345,6 +351,7 @@ skip2:
     ldy #2
     ldya temp+2
     sta DSPDATA
+.endif
 skip3:
 skip:
     ldx xt
