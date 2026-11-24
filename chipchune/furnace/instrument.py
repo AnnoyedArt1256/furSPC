@@ -460,8 +460,17 @@ class FurnaceInstrument:
         sm.wave_len = read_byte(stream)
 
         if sm.use_note_map:
-            for i in range(len(sm.sample_map)):
+            # The format switched from 120 entries (C-0..B-9) to 180
+            # entries (C-(-5)..B-9) in dev246. Normalize both to 180
+            # entries indexed the same way Furnace does internally.
+            for i in range(180):
+                sm.sample_map[i].freq = i
+                sm.sample_map[i].sample_index = 65535
+            note_low = 0 if self.meta.version >= 246 else 60
+            for i in range(note_low, 180):
                 sm.sample_map[i].freq = read_short(stream)
+                if self.meta.version < 246:
+                    sm.sample_map[i].freq += 60
                 sm.sample_map[i].sample_index = read_short(stream)
 
         return sm
@@ -1256,10 +1265,15 @@ class FurnaceInstrument:
                 note_map = InsFeatureAmiga()
                 note_map.use_note_map = bool(read_byte(ins_data))
                 if note_map.use_note_map:
-                    for i in range(len(note_map.sample_map)):
-                        note_map.sample_map[i].freq = read_int(ins_data)
-                    for i in range(len(note_map.sample_map)):
-                        note_map.sample_map[i].sample_index = read_short(ins_data)
+                    # Old instruments stored 120 notes (C-0..B-9).
+                    # Normalize them into the 180-note map used by dev246+.
+                    for i in range(60):
+                        note_map.sample_map[i].freq = i
+                        note_map.sample_map[i].sample_index = 65535
+                    for i in range(120):
+                        note_map.sample_map[60 + i].freq = read_int(ins_data) + 60
+                    for i in range(120):
+                        note_map.sample_map[60 + i].sample_index = read_short(ins_data)
                 self.features.append(note_map)
 
         # n163

@@ -1888,55 +1888,92 @@ note_cut_loop_end:
   dex
   bpl note_cut_loop
   
-  ; this does sample mapping for instruments that have a custom sample map(?)
-.repeat 8, I
-  lda sample_mapped+I
-  beq :+++
-
-  ldx ins+I
-
-  lda insPCMIL, x
-  sta patzp
-  lda insPCMIH, x
-  sta patzp+1
-
-  ldy note_n+I
-  ldya patzp
-  sta macroIns
-
-  lda insPCMPL, x
-  sta patzp
-  lda insPCMPH, x
-  sta patzp+1
-
-  ldy #0
-  ldya patzp
-  cmp #$ff
+  ; Apply per-instrument sample maps.
+  ; Descriptor: run count, default sample, then
+  ; (first note, last note, sample, signed note delta) per run.
+  ldx #0
+sm_loop:
+  lda sample_mapped, x
   bne :+
-  lda note_n+I
-  sta macroIns+1
+  jmp sm_next
+:
+  stx xt
+  lda ins, x
+  tax
   lda insPCMIL, x
   sta patzp
   lda insPCMIH, x
   sta patzp+1
+  ldx xt
+
   ldy #0
   ldya patzp
   sta macroIns
-  jmp :++
-:
-  ldy note_n+I
+  iny
   ldya patzp
   sta macroIns+1
-:
-  lda macroIns
-  sta cursamp+I
-  lda macroIns+1
-  sta note_n+I
-  lda #0
-  sta sample_mapped+I
-:
 
-.endrepeat
+  lda note_n, x
+  sta effects_temp+1
+
+  ldy #2
+  lda macroIns
+  beq sm_default
+sm_scan:
+  ldya patzp
+  cmp effects_temp+1
+  beq sm_match_start
+  bcs sm_default
+  iny
+  ldya patzp
+  cmp effects_temp+1
+  bcs sm_match
+  iny
+  iny
+  iny
+  dec macroIns
+  bne sm_scan
+  jmp sm_default
+
+sm_match_start:
+  iny
+sm_match:
+  iny
+  ldya patzp
+  sta cursamp, x
+  iny
+  ldya patzp
+  cmp #$80
+  bcs sm_delta_neg
+  clc
+  adc effects_temp+1
+  cmp #96
+  bcc sm_store
+  lda #95
+  jmp sm_store
+sm_delta_neg:
+  ; delta is a signed byte; add it and clamp to note 0
+  clc
+  adc effects_temp+1
+  bpl sm_store
+  lda #0
+sm_store:
+  sta note_n, x
+  jmp sm_done
+
+sm_default:
+  lda macroIns+1
+  sta cursamp, x
+
+sm_done:
+  lda #0
+  sta sample_mapped, x
+sm_next:
+  inx
+  cpx #chnum
+  beq :+
+  jmp sm_loop
+:
 
   ; pre-pitch-slide code
   ldx #chnum-1

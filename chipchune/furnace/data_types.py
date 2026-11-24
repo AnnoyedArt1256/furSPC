@@ -550,7 +550,7 @@ class InsFeatureAmiga(InsFeatureAbstract):  # Sample data
     use_sample: bool = False
     use_wave: bool = False
     wave_len: int = 31
-    sample_map: List[SampleMap] = field(default_factory=lambda: [SampleMap() for _ in range(120)])
+    sample_map: List[SampleMap] = field(default_factory=lambda: [SampleMap() for _ in range(180)])
 
 
 @dataclass

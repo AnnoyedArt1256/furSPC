@@ -957,68 +957,73 @@ for i in range(chnum):
         else:
             f.write(", ")
 
-total_maps = []
+def build_sample_map(ins):
+    """
+    Turn a Furnace sample map into compact runs.
+
+    The driver note numbering uses C-0 = 0; Furnace stores maps with
+    C-(-5) = 0, so converter note n reads map entry n+60. Notes without
+    a map entry fall back to the instrument's default sample.
+
+    Each run is (sample, freq delta, last converter note) and occupies
+    three bytes in the generated SPC instead of the old per-note pair of
+    120-byte tables.
+    """
+    amiga = None
+    for feature in ins.features:
+        if type(feature) == InsFeatureAmiga:
+            amiga = feature
+            break
+    if amiga is None:
+        return [], 0
+
+    default_sample = amiga.init_sample
+    if default_sample < 0 or default_sample >= len(module.samples) or default_sample > 255:
+        default_sample = 0
+    if not amiga.use_note_map:
+        return [], default_sample
+
+    runs = []
+    current = None
+    for conv_note in range(96):
+        furnace_note = conv_note + 60
+        entry = amiga.sample_map[furnace_note]
+        sample = entry.sample_index
+        if sample < 0 or sample == 65535 or sample >= len(module.samples) or sample > 255:
+            if current is not None:
+                runs.append(current)
+                current = None
+            continue
+        delta = int(entry.freq) - furnace_note
+        delta = max(-128, min(127, delta))
+        if (current is not None and current[2] == sample and
+                current[3] == delta and current[1] == conv_note - 1):
+            current = (current[0], conv_note, sample, delta)
+        else:
+            if current is not None:
+                runs.append(current)
+            current = (conv_note, conv_note, sample, delta)
+    if current is not None:
+        runs.append(current)
+    return runs, default_sample
+
+
+sample_map_dups = {}
 for i in range(len(module.instruments)):
-    features = module.instruments[i].features
-    a = filter(
-        lambda x: (
-            type(x) == InsFeatureAmiga
-        ), features
-    )
-    use_map = False
-    for j in a:
-        if j.use_note_map == True:
-            use_map = True
-            break
-    a = filter(
-        lambda x: (
-            type(x) == InsFeatureAmiga
-        ), features
-    )
-    f.write("ins"+str(i)+"DP:\n")
-    if use_map == True:
-        f.write(".byte ")
-        for j in a:
-            for k in range(len(j.sample_map)):
-                f.write(str(j.sample_map[k].freq))
-                if k == (len(j.sample_map)-1):
-                    f.write("\n")
-                else:
-                    f.write(", ")
-            break
+    runs, default_sample = build_sample_map(module.instruments[i])
+    lines = ".byte "+str(len(runs))+", "+str(default_sample)+"\n"
+    for start_note, end_note, sample, delta in runs:
+        lines += ".byte "+str(start_note)+", "+str(end_note)+", "+str(sample)+", "+str(delta & 0xff)+"\n"
+    if lines in sample_map_dups:
+        f.write("ins"+str(i)+"SM = "+sample_map_dups[lines]+"\n")
     else:
-        f.write(".byte 255\n")
-    f.write("ins"+str(i)+"DI:\n")
-    a = filter(
-        lambda x: (
-            type(x) == InsFeatureAmiga
-        ), features
-    )
-    if use_map == True:
-        f.write(".byte ")
-        for j in a:
-            for k in range(len(j.sample_map)):
-                if j.sample_map[k].sample_index == 65535:
-                    f.write("0")
-                else:
-                    f.write(str(j.sample_map[k].sample_index))
-                if k == (len(j.sample_map)-1):
-                    f.write("\n")
-                else:
-                    f.write(", ")
-            break
-    else:
-        init_sample = 0
-        for j in a:
-            if j.init_sample > 0 and j.init_sample != 65535:
-                init_sample = j.init_sample
-                break
-        f.write(".byte "+str(init_sample)+"\n")
+        f.write("ins"+str(i)+"SM:\n"+lines)
+        sample_map_dups[lines] = "ins"+str(i)+"SM"
 
 f.write("insPCMIL:\n")
 f.write(".lobytes ")
 for i in range(len(module.instruments)):
-    f.write("ins"+str(i)+"DI")
+    f.write("ins"+str(i)+"SM")
     if i == len(module.instruments)-1:
         f.write("\n")
     else:
@@ -1026,24 +1031,7 @@ for i in range(len(module.instruments)):
 f.write("insPCMIH:\n")
 f.write(".hibytes ")
 for i in range(len(module.instruments)):
-    f.write("ins"+str(i)+"DI")
-    if i == len(module.instruments)-1:
-        f.write("\n")
-    else:
-        f.write(", ")
-
-f.write("insPCMPL:\n")
-f.write(".lobytes ")
-for i in range(len(module.instruments)):
-    f.write("ins"+str(i)+"DP")
-    if i == len(module.instruments)-1:
-        f.write("\n")
-    else:
-        f.write(", ")
-f.write("insPCMPH:\n")
-f.write(".hibytes ")
-for i in range(len(module.instruments)):
-    f.write("ins"+str(i)+"DP")
+    f.write("ins"+str(i)+"SM")
     if i == len(module.instruments)-1:
         f.write("\n")
     else:
