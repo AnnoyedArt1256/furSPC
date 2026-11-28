@@ -890,6 +890,25 @@ effectF4:
   jmp begnote
 .endmacro
 
+write_noise_mask:
+  lda #0
+.repeat 8, I
+  pha
+  lda special+I
+  and #1
+  tax
+  pla
+  cpx #1
+  bne :+
+  ora #1<<I
+:
+.endrepeat
+  ora noise_mask
+  ldx #DSP_NOISECH
+  stx DSPADDR
+  sta DSPDATA
+  rts
+
 .macro add_11xx
 effectF5:
   get_patzp
@@ -901,6 +920,7 @@ effectF5:
   lda noise_mask
   and kon_table+8, x
   sta noise_mask
+  jsr write_noise_mask
   jmp begnote
 :
   lda noise_mask
@@ -2606,49 +2626,13 @@ vol_loop:
 :
 .endrepeat
 
-  lda koff_mirror
-  cmp #0
-  beq :+
-  lda #0
-  ldx #$5c
-  stx DSPADDR
-  sta DSPDATA
-  sta koff_mirror
-:
-
-  lda kon_mirror
-  cmp #0
-  beq :+
-  ldx #$4c
-  stx DSPADDR
-  sta DSPDATA
-  lda #0
-  sta kon_mirror
-:
-
   lda flags
   ora noise_freq
   ldx #$6c
   stx DSPADDR
   sta DSPDATA
 
-  lda #0
-.repeat 8, I
-  pha
-  lda special+I
-  and #1
-  tax
-  pla
-  cpx #1
-  bne :+
-  ora #1<<I
-:
-.endrepeat
-  ora noise_mask
-  ldx #$3d
-  stx DSPADDR
-  sta DSPDATA
-
+  jsr write_noise_mask
 
 .if ECHO_ENABLE
   lda #0
@@ -2686,6 +2670,26 @@ vol_loop:
   ldx #$2d
   stx DSPADDR
   sta DSPDATA
+
+  lda koff_mirror
+  cmp #0
+  beq :+
+  lda #0
+  ldx #$5c
+  stx DSPADDR
+  sta DSPDATA
+  sta koff_mirror
+:
+
+  lda kon_mirror
+  cmp #0
+  beq :+
+  ldx #$4c
+  stx DSPADDR
+  sta DSPDATA
+  lda #0
+  sta kon_mirror
+:
 
   rts
 .endproc
