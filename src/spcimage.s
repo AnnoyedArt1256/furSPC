@@ -2006,7 +2006,7 @@ skip1:
   lda temp
   and #31
   sta noise_freq
-  incx mframeN
+  inc mframeN
 end:
   rts
 .endmacro
