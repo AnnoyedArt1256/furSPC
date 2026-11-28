@@ -360,8 +360,11 @@ def conv_pattern(pattern):
                 temp.extend([0xF1])
                 continue
             if k[0] == 0x03 and k[1] > 0:
-                new_byte = 1
-                temp.extend([0xE5, k[1], max(min(notes.index(str(row.note))+(row.octave*12)+note_transpose,0xDF-0x80),0)])
+                # 03xx needs a target note. A row with only the effect
+                # continues the previous slide; there is no new target.
+                if str(row.note) in notes:
+                    new_byte = 1
+                    temp.extend([0xE5, k[1], max(min(notes.index(str(row.note))+(row.octave*12)+note_transpose,0xDF-0x80),0)])
                 continue
             if k[0] == 0x04:
                 new_byte = 1
