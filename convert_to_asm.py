@@ -322,18 +322,29 @@ def conv_pattern(pattern):
                 temp.extend([0xED, k[1]])
                 has0Dxx = 0
                 continue
-            if (k[0] == 0x09 or k[0] == 0x0F) and (speed_type == 1):
+            if k[0] == 0x09 or k[0] == 0x0F:
+                grooves = module.subsongs[subsong].grooves
                 new_byte = 1
-                temp.extend([0xE1, k[1]])
-                temp.extend([0xE0, k[1]])
-                continue
-            if k[0] == 0x0F and (speed_type == 2):
-                new_byte = 1
-                temp.extend([0xE1, k[1]])
-                continue
-            if k[0] == 0x09 and (speed_type == 2):
-                new_byte = 1
-                temp.extend([0xE0, k[1]])
+                if grooves:
+                    if k[0] == 0x09:
+                        # 09xx selects a groove pattern.
+                        if 0 <= k[1] < len(grooves):
+                            vals = grooves[k[1]]
+                            if vals:
+                                temp.extend([0xE0, vals[0] & 0xFF])
+                                if len(vals) > 1:
+                                    temp.extend([0xE1, vals[1] & 0xFF])
+                    elif k[1] > 0:
+                        # With grooves present, 0Fxx changes the first speed.
+                        temp.extend([0xE0, k[1]])
+                elif k[1] > 0:
+                    if speed_type == 1:
+                        temp.extend([0xE1, k[1]])
+                        temp.extend([0xE0, k[1]])
+                    elif k[0] == 0x0F:
+                        temp.extend([0xE1, k[1]])
+                    else:
+                        temp.extend([0xE0, k[1]])
                 continue
             if k[0] >= 0x01 and k[0] <= 0x03 and k[1] == 0:
                 new_byte = 1
