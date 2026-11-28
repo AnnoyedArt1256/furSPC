@@ -34,6 +34,10 @@ FINALLY, an SNES driver that is not total dogwater to use!
   * 12xx: toggle echo on channel
   * 13xx: toggle pitch modulation
   * 1Dxx: set noise freq
+  * 20xx: set attack (0 to F)
+  * 21xx: set decay (0 to 7)
+  * 22xx: set sustain (0 to 7)
+  * 23xx: set release (00 to 1F)
   * E1xx: note slide up
   * E2xx: note slide down
   * E5xx: note fine-pitch
