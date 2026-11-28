@@ -248,36 +248,6 @@ on_ch:
 .endif
 
     ldx xt
-    lda ins, x
-    tax
-    lda insM, x
-    and #3
-    cmp #3
-    bne on_skip2
-
-    ldx xt
-
-    txa
-    xcn a
-    ora #5
-    sta DSPADDR
-    lda #0
-    sta DSPDATA
-    txa
-    xcn a
-    ora #6
-    sta DSPADDR
-    lda #0
-    sta DSPDATA
-    txa
-    xcn a
-    ora #7
-    sta DSPADDR
-    lda chE2, x
-    sta DSPDATA
-on_skip2:
-
-    ldx xt
     lda #$ff
     sta sample_mapped, x
     pla
@@ -298,6 +268,23 @@ load_ins_env:
   sta chE1, x
   lda #0
   sta chE2, x
+.if MACRO_SPEC
+  lda ins, x
+  tay
+  lda insSL, y
+  sta temp+2
+  lda insSH, y
+  sta temp+3
+  ldy #0
+  ldya temp+2
+  cmp #$ff
+  beq :+
+  sta special, x
+  and #1
+  bne :+
+  jsr write_noise_mask
+:
+.endif
   lda ins, x
   tay
   lda insM, y
@@ -1370,19 +1357,6 @@ cont_advance:
   sta doMacroPL, x
   sta doMacroPR, x
 .endif
-
-  txa
-  xcn a
-  ora #5
-  sta DSPADDR
-  lda chE0, x
-  sta DSPDATA
-  txa
-  xcn a
-  ora #6
-  sta DSPADDR
-  lda chE1, x
-  sta DSPDATA
 
 :
   lda #0
@@ -2623,6 +2597,34 @@ vol_loop:
   lda cursamp+I
   stx DSPADDR
   sta DSPDATA  
+:
+
+  lda isoff+I
+  bne :+
+
+  ldx #I<<4
+  inx
+  inx
+  inx
+  inx
+  inx
+  lda chE0+I
+  stx DSPADDR
+  sta DSPDATA
+  inx
+  lda chE1+I
+  stx DSPADDR
+  sta DSPDATA
+  inx
+.if MACRO_GAIN
+  ldy wav_length+I
+  lda insGL, y
+  cmp #$ff
+  bne :+
+.endif
+  lda chE2+I
+  stx DSPADDR
+  sta DSPDATA
 :
 .endrepeat
 
