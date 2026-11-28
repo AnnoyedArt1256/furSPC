@@ -83,6 +83,7 @@ DSP_ECHODEL  = $7D
 
 .segment "SPCZEROPAGE"
 sample_mapped: .res chnum
+sample_delta: .res chnum
 
 kon_mirror: .res 1
 koff_mirror: .res 1
@@ -799,6 +800,15 @@ effectE5:
   ldy #0
   get_patzp
   ldx ch
+  clc
+  adc sample_delta, x
+  bpl :+
+  lda #0
+:
+  cmp #96
+  bcc :+
+  lda #95
+:
   sta note_dest, x
 
   lda note_n, x
@@ -2356,6 +2366,7 @@ sm_match:
   sta cursamp, x
   iny
   ldya patzp
+  sta sample_delta, x
   cmp #$80
   bcs sm_delta_neg
   clc
@@ -2375,6 +2386,8 @@ sm_store:
   jmp sm_done
 
 sm_default:
+  lda #0
+  sta sample_delta, x
   lda macroIns+1
   sta cursamp, x
 
