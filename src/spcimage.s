@@ -86,6 +86,10 @@ sample_mapped: .res chnum
 
 kon_mirror: .res 1
 koff_mirror: .res 1
+.if SNES_ENV_REL || SNES_ENV_DEC || SNES_ENV_EXP || SNES_ENV_GAIN
+rel_pending: .res 1
+rel_gain: .res 1
+.endif
 chE0: .res chnum
 chE1: .res chnum
 chE2: .res chnum
@@ -232,6 +236,15 @@ on_ch:
     lda kon_mirror
     ora kon_table, x
     sta kon_mirror
+.if SNES_ENV_REL || SNES_ENV_DEC || SNES_ENV_EXP || SNES_ENV_GAIN
+    ; a new note cancels a release still waiting for this tick's flush
+    lda rel_pending
+    and kon_table+8, x
+    sta rel_pending
+    lda rel_gain
+    and kon_table+8, x
+    sta rel_gain
+.endif
     stx xt
     lda ins, x
     sta wav_length, x
@@ -268,6 +281,18 @@ load_ins_env:
   sta chE1, x
   lda #0
   sta chE2, x
+  ; Load the release byte from the envelope table while temp+2 still
+  ; points there. The special-macro block below reuses temp+2, so reading
+  ; it afterwards picked up the EX1 macro table instead (usually 0).
+  lda ins, x
+  tay
+  lda insM, y
+  and #3
+  beq :+
+  ldy #2
+  ldya temp+2
+  sta chE2, x
+:
 .if MACRO_SPEC
   lda ins, x
   tay
@@ -285,19 +310,10 @@ load_ins_env:
   jsr write_noise_mask
 :
 .endif
-  lda ins, x
-  tay
-  lda insM, y
-  and #3
-  beq load_env_done
-  ldy #2
-  ldya temp+2
-  sta chE2, x
-load_env_done:
   rts
 
 .macro add_off_ch
-    .local skip, skip2, skip3
+    .local skip
     pha
     stx xt
     sty yt
@@ -315,50 +331,83 @@ load_env_done:
     jmp skip
 :
 .endif
-.if SNES_ENV_REL
-    cmp #1
-    beq skip2
+.if SNES_ENV_REL || SNES_ENV_DEC || SNES_ENV_EXP || SNES_ENV_GAIN
+    ldx xt
+    lda rel_pending
+    ora kon_table, x
+    sta rel_pending
 .endif
-
 .if SNES_ENV_DEC || SNES_ENV_EXP || SNES_ENV_GAIN
-    ldx xt
-
-    txa
-    xcn a
-    ora #7
-    sta DSPADDR
-    lda chE2, x
-    sta DSPDATA
-
-    txa
-    xcn a
-    ora #5
-    sta DSPADDR
-    lda #0
-    sta DSPDATA
-
-    jmp skip3
+    ; re-read the mode: A was overwritten by the pending-bit update
+    lda ins, x
+    tay
+    lda insM, y
+    and #3
+    cmp #1
+    beq :+
+    lda rel_gain
+    ora kon_table, x
+    sta rel_gain
+:
 .endif
-skip2:
-.if SNES_ENV_REL
-    ldx xt
-    jsr write_rel
-.endif
-skip3:
 skip:
     ldx xt
     ldy yt
     pla
 .endmacro
 
-write_rel:
+; Release is applied during the tick's register flush, next to the
+; per-channel envelope writes, so a note-off lands on the same SPC frame
+; as Furnace's writeEnv instead of several milliseconds early.
+.if SNES_ENV_REL || SNES_ENV_DEC || SNES_ENV_EXP || SNES_ENV_GAIN
+flush_rel:
+  lda rel_pending
+  beq flush_rel_done
+  ldx #chnum-1
+flush_rel_loop:
+  lda rel_pending
+  and kon_table, x
+  beq flush_rel_next
+.if SNES_ENV_DEC || SNES_ENV_EXP || SNES_ENV_GAIN
+  lda rel_gain
+  and kon_table, x
+  beq flush_rel_adsr
+  ; decrease-gain release: switch the voice out of ADSR into gain mode
+  txa
+  xcn a
+  ora #7
+  sta DSPADDR
+  lda chE2, x
+  sta DSPDATA
+  txa
+  xcn a
+  ora #5
+  sta DSPADDR
+  lda #0
+  sta DSPDATA
+  jmp flush_rel_next
+flush_rel_adsr:
+.endif
   txa
   xcn a
   ora #6
   sta DSPADDR
   lda chE2, x
   sta DSPDATA
+flush_rel_next:
+  lda rel_pending
+  and kon_table+8, x
+  sta rel_pending
+.if SNES_ENV_DEC || SNES_ENV_EXP || SNES_ENV_GAIN
+  lda rel_gain
+  and kon_table+8, x
+  sta rel_gain
+.endif
+  dex
+  bpl flush_rel_loop
+flush_rel_done:
   rts
+.endif
 
 off_ch:
   add_off_ch
@@ -2672,6 +2721,10 @@ vol_loop:
   ldx #$2d
   stx DSPADDR
   sta DSPDATA
+
+.if SNES_ENV_REL || SNES_ENV_DEC || SNES_ENV_EXP || SNES_ENV_GAIN
+  jsr flush_rel
+.endif
 
   lda koff_mirror
   cmp #0
