@@ -1442,12 +1442,12 @@ f.close()
 
 tuning = module.meta.tuning
 f = open("src/note_lo.bin","wb")
-for i in range(128):
+for i in range(98):
     freq = tuning * (2**(float(i-57)/12.0))
     f.write(bytearray([int(freq)&0xff]))
 f.close()
 f = open("src/note_hi.bin","wb")
-for i in range(128):
+for i in range(98):
     freq = tuning * (2**(float(i-57)/12.0))
     f.write(bytearray([(int(freq)>>8)&0xff]))
 f.close()

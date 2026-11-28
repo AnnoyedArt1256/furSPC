@@ -150,8 +150,6 @@ sample_dir:
   ; a start address then a loop address
   .include "sampledir.s"
   nop  ; resync debugger's disassembly
-.res $400-*
-  .res 4*8
 
 mframeV: .res chnum
 mframeA: .res chnum
@@ -246,7 +244,13 @@ yt: .res 1
 wav_length: .res chnum
 cursamp: .res chnum
 
-.align 256
+; Directory entries for the eight wave-synth voices. They only need to be
+; inside the DSP's 1KB sample-directory block, not at a fixed address.
+.align 4
+wave_dir:
+  .res 4*8
+.assert (wave_dir - sample_dir) + 4*8 <= 1024, error, "wave directory exceeds sample directory block"
+
 spc_entry:
   jsr initaddr
 nexttick:
@@ -1219,20 +1223,10 @@ check_fb:
 :
 
   cmp #$FD
-  bne :+
-  ldx ch
-  lda #$ff
-  sta isoff, x
-  jsr off_ch
-  lda #1
-  ldx ch
-  sta dur, x
-  ldy #0
-  jmp end_advance
-:
-
+  beq note_off
   cmp #$FE
   bne :+
+note_off:
   ldx ch
   lda #$ff
   sta isoff, x
@@ -1322,7 +1316,7 @@ eff_hi:
 
 .macro add_advance_routine
 advance:
-  .local skipD, noIns, noVol, beg, blank2, blank3, hasNote, wait
+  .local skipD, noIns, noVol, beg, blank2, blank3, hasNote, wait, note_off
 beg:
   lda ch
   asl a
@@ -2066,15 +2060,29 @@ lin_vib_abs:
   lsr
   lsr
   sta temp+3
+  ; value = (depth * (sineQ*8+4)) >> 4, matching the old table
   lda vibrato_param, x
   and #15
+  sta T1
+  lda temp+3
+  asl
+  asl
+  asl
+  clc
+  adc #4
+  ldy T1
+  mul ya
+  lsr
+  lsr
+  lsr
+  lsr
+  sta temp+3
+  tya
   asl
   asl
   asl
   asl
   ora temp+3
-  tay
-  lda lin_vib_lookup, y
   sta temp+3
 
   lda temp+2
@@ -2703,12 +2711,12 @@ vol_loop:
   asl a
   tay
   lda (<temp), y
-  sta $400+I*4+0
-  sta $400+I*4+2
+  sta wave_dir+I*4+0
+  sta wave_dir+I*4+2
   iny
   lda (<temp), y
-  sta $400+I*4+1
-  sta $400+I*4+3
+  sta wave_dir+I*4+1
+  sta wave_dir+I*4+3
 .endrepeat
 
   lda koff_mirror
@@ -2747,7 +2755,7 @@ vol_loop:
   lda insM, y
   and #32
   beq :+
-  lda #$80+I
+  lda #(((wave_dir - sample_dir) / 4) + I)
   stx DSPADDR
   sta DSPDATA  
   jmp :++
@@ -3175,16 +3183,6 @@ lin_vib_sine:
   .byte 127, 126, 125, 122, 117, 112, 106, 98, 90, 81, 71, 60, 49, 37, 25, 12
   .byte 0, 244, 231, 219, 207, 196, 185, 175, 166, 158, 150, 144, 139, 134, 131, 130
   .byte 129, 130, 131, 134, 139, 144, 150, 158, 166, 175, 185, 196, 207, 219, 231, 244
-
-lin_vib_lookup:
-  ; Furnace's linear vibrato is (depth * vibTable) >> 4 in 1/128
-  ; semitone units (vibratoFine 15 cancels its /15). Dividing by 15
-  ; here made the vibrato about 15x too weak.
-  .repeat 16, J
-    .repeat 16, I
-      .byte (J * (I*8+4)) >> 4
-    .endrepeat
-  .endrepeat
 .endif
 
 
