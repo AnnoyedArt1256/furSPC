@@ -1,7 +1,7 @@
 from chipchune.furnace.module import FurnaceModule
 from chipchune.furnace.data_types import InsFeatureMacro, InsFeatureSNES, InsFeatureAmiga, InsFeatureWaveSynth
 from chipchune.furnace.enums import MacroCode, MacroItem, MacroType
-from chipchune.furnace.enums import InstrumentType, SNESSusMode
+from chipchune.furnace.enums import InstrumentType, SNESSusMode, SampleType
 import sys, math, os
 
 if __name__ == "__main__" and os.environ.get("FURSPC_LOWLEVEL") != "1":
@@ -14,6 +14,29 @@ dups = {}
 
 print(sys.argv)
 module = FurnaceModule(sys.argv[1])
+non_brr_samples = []
+for sample_index, sample in enumerate(module.samples):
+    depth = getattr(sample.meta, "depth", None)
+    try:
+        is_brr = int(depth) == int(SampleType.SNES_BRR.value)
+    except (TypeError, ValueError):
+        is_brr = False
+    if not is_brr:
+        non_brr_samples.append((
+            sample_index,
+            getattr(sample.meta, "name", "") or "unnamed",
+            depth,
+        ))
+if non_brr_samples:
+    print(
+        "warning: non-BRR sample detected, please fix in furnace",
+        file=sys.stderr,
+    )
+    for sample_index, sample_name, depth in non_brr_samples:
+        print(
+            f"  sample {sample_index}: {sample_name} (type {depth})",
+            file=sys.stderr,
+        )
 chnum = module.get_num_channels()
 flags = module.chips.list[0].flags
 
@@ -396,6 +419,7 @@ def conv_pattern(pattern):
 
 f = open("src/song.s","w")
 
+f.write("song_data_start:\n")
 f.write("TIMER_HZ = "+str(round(song_clock))+"\n")
 
 if echo_used:
@@ -1113,6 +1137,7 @@ for i in range(chnum):
         f.write(".byte "+g+"\n")
 
 g = open("src/sampledir.s","w")
+f.write("sample_data_start:\n")
 for i in range(len(module.samples)):
     sample = [int(j) for j in list(module.samples[i].data)]
     start = 0
@@ -1128,6 +1153,7 @@ for i in range(len(module.samples)):
     f.write(".res 15-(*&15),0\n")
     f.write("sample"+str(i)+":\n.byte "+str(sample)[1:-1]+"\n")  
 g.close()
+f.write("sample_data_end:\n")
 
 cnote = 440 * (2**(float(12*4-69-0.5)/12.0))
 anote = 16

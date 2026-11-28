@@ -7,7 +7,7 @@ an SNES sound driver for Furnace
 FINALLY, an SNES driver that is not total dogwater to use!
 
 * You have to have [Python](https://www.python.org/) and the [CC65 toolchain](https://cc65.github.io/) installed
-* Both pitch linearity modes are supported: "None" uses frequency-based pitch slides, and "Full" uses semitone-based (1/128 semitone) pitch slides. The converter reads the module's compat flag and only assembles the pitch engine it needs. Partial linearity (old modules) is treated as Full.
+* Both pitch linearity modes are supported: "None" uses frequency-based pitch slides, "Full" uses semitone-based (1/128 semitone) pitch slides. Legacy "Partial" treated as "Full".
 * Unused features are omitted from the generated driver: panning code is only included when a pan effect or pan macro is used, and echo setup/toggle code is only included when a channel is routed to echo.
 
 * The driver only supports **volume, arpeggio, waveform, panning (left/right), noise freq and special** macros in each instrument and it DOESN'T support LFO and ADSR macros nor delay and step length
@@ -47,17 +47,14 @@ FINALLY, an SNES driver that is not total dogwater to use!
 when you've finished / want to test out this driver:
 * open the terminal/command prompt **to the furSPC directory**
 * run `convert.sh your_fur_file.fur` or `convert.bat file.fur` (depending on your OS)
-* by default the output is written next to the input with the same name and a `.spc` extension
-* the output file and ID666 tags can be specified on the command line:
+
+By default, the output is written next to the input with the same name and a `.spc` extension. The output file and ID666 tags can be specified on the command line (or otherwise they will be derived from the .fur):
   * `convert.sh song.fur -o build/song.spc`
   * `convert.sh song.fur --title "Song Title" --album "Album" --artist "Artist" --time 2:38`
-  * `convert.sh --time` accepts seconds (`158`) or `MM:SS` (`2:38`)
-* an entire directory can be converted at once:
-  * `convert.sh songs/ -o build`
-  * add `--recursive` to include subdirectories
-* when `--title`, `--album`, or `--artist` is omitted, the values are read from the `.fur` metadata. If the title is empty, the input filename is used.
-* in the output directory you'll hopefully see your `.spc` files
-  * those are the .spc files that you can run on any .spc compatible player!
+  * `--time` accepts seconds (`158`) or `MM:SS` (`2:38`). Default time derived from `.fur`: one loop if the song loops, otherwise the end of the stopping pattern.
+
+An entire directory can be converted at once:
+  * `convert.sh songs/ -o build` (add `--recursive` to include subdirectories)
 
 Hopefully you'll have fun with this driver alongside [furNES](https://github.com/AnnoyedArt1256/furNES) and [furC64](https://github.com/AnnoyedArt1256/furC64) :D
 
