@@ -161,6 +161,14 @@ sample_dir:
   .include "sampledir.s"
   nop  ; resync debugger's disassembly
 
+.if LOOP_ENABLE
+loop_start_lo: .res chnum
+loop_start_hi: .res chnum
+loop_end_lo: .res chnum
+loop_end_hi: .res chnum
+loop_count: .res chnum
+.endif
+
 mframeV: .res chnum
 mframeA: .res chnum
 mframeS: .res chnum
@@ -752,6 +760,7 @@ effectED:
 .endmacro
 
 
+.if EFFECT_ARP
 .macro add_00xx
 effectE2:
   get_patzp
@@ -770,6 +779,7 @@ effectE2:
   sta arpeff1, x
   jmp begnote
 .endmacro
+.endif
 
 
 .macro add_01xx
@@ -971,6 +981,7 @@ effectEC:
   jmp begnote
 .endmacro
 
+.if EFFECT_NOTE_DELAY
 .macro add_EDxx
 effectEE:
   lda delay_do
@@ -985,8 +996,10 @@ skip_delay2:
   sta dur, x
   rts
 .endmacro
+.endif
 
 
+.if EFFECT_LEGATO
 .macro add_EAxx
 effectEF:
   ldx ch
@@ -1000,7 +1013,9 @@ effectF0:
   sta legato, x
   jmp begnote
 .endmacro
+.endif
 
+.if EFFECT_VOLSLIDE
 .macro add_0Axx
   .local skip, skip2
 effectF3:
@@ -1020,9 +1035,10 @@ skip2:
   jmp begnote
 skip:
 .endmacro
+.endif
 
 
-
+.if EFFECT_WAVE
 .macro add_10xx
 effectF4:
   get_patzp
@@ -1030,26 +1046,33 @@ effectF4:
   sta duty, x
   jmp begnote
 .endmacro
+.endif
 
 write_noise_mask:
-  lda #0
-.repeat 8, I
-  pha
-  lda special+I
+  lda #1
+  sta T1
+  lda noise_mask
+  sta T2
+  ldx #0
+noise_mask_loop:
+  lda special, x
   and #1
-  tax
-  pla
-  cpx #1
-  bne :+
-  ora #1<<I
-:
-.endrepeat
-  ora noise_mask
+  beq noise_mask_next
+  lda T2
+  ora T1
+  sta T2
+noise_mask_next:
+  asl T1
+  inx
+  cpx #8
+  bne noise_mask_loop
+  lda T2
   ldx #DSP_NOISECH
   stx DSPADDR
   sta DSPDATA
   rts
 
+.if EFFECT_NOISE_TOGGLE
 .macro add_11xx
 effectF5:
   get_patzp
@@ -1069,6 +1092,7 @@ effectF5:
   sta noise_mask
   jmp begnote
 .endmacro
+.endif
 
 .if ECHO_TOGGLE
 .macro add_12xx
@@ -1091,12 +1115,14 @@ effectF8:
 .endmacro
 .endif
 
+.if EFFECT_NOISE_FREQ
 .macro add_1Dxx
 effectF6:
   get_patzp
   sta noise_freq
   jmp begnote
 .endmacro
+.endif
 
 .macro set_pmod
   .local skip
@@ -1130,31 +1156,74 @@ effectF7:
 
 add_09xx
 add_0Fxx
+.if EFFECT_ARP
 add_00xx
+.endif
 add_01xx
 add_02xx
 add_03xx
 add_04xx
+.if EFFECT_VOLSLIDE
 add_0Axx
+.endif
 add_0Bxx
+.if EFFECT_WAVE
 add_10xx
+.endif
+.if EFFECT_NOISE_TOGGLE
 add_11xx
+.endif
 .if ECHO_TOGGLE
 add_12xx
 .endif
+.if EFFECT_NOISE_FREQ
 add_1Dxx
+.endif
 add_E1xx
 add_E2xx
 add_E5xx
+.if EFFECT_LEGATO
 add_EAxx
+.endif
 add_ECxx
+.if EFFECT_NOTE_DELAY
 add_EDxx
+.endif
 add_ext
+
+; Effects that are not used in this song still have table slots. Point
+; them at a shared no-op that consumes nothing extra and continues.
+.if !EFFECT_VOLSLIDE
+effectF3 = effect_nop
+.endif
+.if !EFFECT_WAVE
+effectF4 = effect_nop
+.endif
+.if !EFFECT_NOISE_TOGGLE
+effectF5 = effect_nop
+.endif
+.if !EFFECT_NOISE_FREQ
+effectF6 = effect_nop
+.endif
+.if !EFFECT_LEGATO
+effectEF = effect_nop
+effectF0 = effect_nop
+.endif
+.if !EFFECT_NOTE_DELAY
+effectEE = effect_nop
+.endif
+.if !EFFECT_ARP
+effectE2 = effect_nop
+.endif
+effect_nop:
+  jmp begnote
 
 other_effects:
   lda effects_temp
+.if EFFECT_ADSR_A || EFFECT_ADSR_D || EFFECT_ADSR_S || EFFECT_ADSR_R
   cmp #$F9
   beq adsr_dispatch
+.endif
 .if LEGATO_EFFECT
   cmp #$FA
   bne :+
@@ -1162,6 +1231,7 @@ other_effects:
 :
 .endif
   jmp check_fb
+.if EFFECT_ADSR_A || EFFECT_ADSR_D || EFFECT_ADSR_S || EFFECT_ADSR_R
 adsr_dispatch:
   get_patzp
   sta temp
@@ -1169,17 +1239,27 @@ adsr_dispatch:
   sta temp+1
   ldx ch
   lda temp
+.if EFFECT_ADSR_A
   beq adsr_attack
+.endif
+.if EFFECT_ADSR_D
   cmp #1
   beq adsr_decay
+.endif
+.if EFFECT_ADSR_S
   cmp #2
   beq adsr_sustain
+.endif
+.if EFFECT_ADSR_R
   cmp #3
-  bne adsr_skip
+  bne :+
   jmp adsr_release
-adsr_skip:
+:
+.endif
   jmp begnote
+.endif
 
+.if EFFECT_ADSR_A
 adsr_attack:
   lda temp+1
   and #15
@@ -1195,7 +1275,9 @@ adsr_attack:
   lda chE0, x
   sta DSPDATA
   jmp begnote
+.endif
 
+.if EFFECT_ADSR_D
 adsr_decay:
   lda temp+1
   and #7
@@ -1215,7 +1297,9 @@ adsr_decay:
   lda chE0, x
   sta DSPDATA
   jmp begnote
+.endif
 
+.if EFFECT_ADSR_S
 adsr_sustain:
   lda temp+1
   and #7
@@ -1247,7 +1331,9 @@ adsr_sustain_write:
   lda chE1, x
   sta DSPDATA
   jmp begnote
+.endif
 
+.if EFFECT_ADSR_R
 adsr_release:
   lda temp+1
   and #31
@@ -1284,9 +1370,10 @@ adsr_release_direct:
   xcn a
   ora #6
   sta DSPADDR
-  lda chE1, x
+  sta chE1, x
   sta DSPDATA
   jmp begnote
+.endif
 
 check_fb:
   cmp #$FB
@@ -1369,6 +1456,7 @@ effectE8:
 .endif
 
 
+.if EFFECT_PITCH_STOP
 effectF1:
   ldx ch
   lda #$00
@@ -1378,13 +1466,23 @@ effectF1:
   lda #$01
   sta didporta, x
   jmp begnote
+.endif
 
+.if EFFECT_VIBRATO_STOP
 effectF2:
   ldx ch
   lda #0
   sta vibrato_param, x
   sta vibrato_phase, x
   jmp begnote
+.endif
+
+.if !EFFECT_PITCH_STOP
+effectF1 = effect_nop
+.endif
+.if !EFFECT_VIBRATO_STOP
+effectF2 = effect_nop
+.endif
 
 eff_lo:
 .repeat EFFECT_COUNT, I
@@ -1415,6 +1513,25 @@ beg:
   beq begnote
   jmp end_advance
 begnote:
+.if LOOP_ENABLE
+  ldx ch
+  lda loop_count, x
+  beq loop_check_done
+  lda patzp
+  cmp loop_end_lo, x
+  bne loop_check_done
+  lda patzp+1
+  cmp loop_end_hi, x
+  bne loop_check_done
+  lda loop_count, x
+  dec a
+  sta loop_count, x
+  lda loop_start_lo, x
+  sta patzp
+  lda loop_start_hi, x
+  sta patzp+1
+loop_check_done:
+.endif
 
   ldy #0
   get_patzp
@@ -1536,6 +1653,10 @@ wait:
   ; extended note: the next byte is an already-biased note index
   ldx ch
   get_patzp
+.if LOOP_ENABLE
+  cmp #$80
+  bcs loop_cmd
+.endif
   sta temp+4
 .if PORTA_NOTE
   lda porta_gate
@@ -1555,6 +1676,28 @@ ext_trigger:
 .endif
   lda temp+4
   jmp note_store
+.if LOOP_ENABLE
+loop_cmd:
+  and #$7f
+  dec a
+  sta loop_count, x
+  get_patzp
+  sta T1
+  get_patzp
+  sta T1+1
+  lda patzp
+  sta loop_start_lo, x
+  lda patzp+1
+  sta loop_start_hi, x
+  clc
+  lda patzp
+  adc T1
+  sta loop_end_lo, x
+  lda patzp+1
+  adc T1+1
+  sta loop_end_hi, x
+  jmp begnote
+.endif
 :
   lda temp
   and #$40
@@ -2357,8 +2500,8 @@ skipseq:
   lda #$ff
   sta delay_do
 
+.if EFFECT_NOTE_DELAY
   ; support for EDxx
-
   ldx #chnum-1
 note_delay_loop:
   stx ch
@@ -2376,7 +2519,9 @@ note_delay_loop_end:
   ldx ch
   dex
   bpl note_delay_loop
+.endif
 
+.if EFFECT_VOLSLIDE
   ; this is for the 0Axx effect to work
   ldx #chnum-1
 vol_add_loop:
@@ -2408,6 +2553,7 @@ vol_add_loop:
 vol_add_loop_end:
   dex
   bpl vol_add_loop
+.endif
 
 
   ; ECxx effect implementation
@@ -2793,7 +2939,9 @@ nrel:
   adc arp, x
 nout:
   clc
+.if EFFECT_ARP
   jsr add_arpeff
+.endif
   jsr clamp_note
   sta note_nums, x
 
@@ -2829,7 +2977,9 @@ nrel:
   adc arp, x
 nout:
   clc
+.if EFFECT_ARP
   jsr add_arpeff
+.endif
   jsr clamp_note
   sta note_nums, x
   tay
@@ -2994,37 +3144,47 @@ vol_loop:
   jsr write_noise_mask
 
 .if ECHO_ENABLE
-  lda #0
-.repeat 8, I
-  pha
-  lda special+I
+  lda #1
+  sta T1
+  lda echo_mask
+  sta T2
+  ldx #0
+echo_mask_loop:
+  lda special, x
   and #2
-  tax
-  pla
-  cpx #2
-  bne :+
-  ora #1<<I
-:
-.endrepeat
-  ora echo_mask
+  beq echo_mask_next
+  lda T2
+  ora T1
+  sta T2
+echo_mask_next:
+  asl T1
+  inx
+  cpx #8
+  bne echo_mask_loop
+  lda T2
   ldx #$4d
   stx DSPADDR
   sta DSPDATA
 .endif
 
-  lda #0
-.repeat 7, I
-  pha
-  lda special+I+1
+  lda #2
+  sta T1
+  lda pmod_mask
+  sta T2
+  ldx #1
+pmod_mask_loop:
+  lda special, x
   and #4
-  tax
-  pla
-  cpx #4
-  bne :+
-  ora #1<<(I+1)
-:
-.endrepeat
-  ora pmod_mask
+  beq pmod_mask_next
+  lda T2
+  ora T1
+  sta T2
+pmod_mask_next:
+  asl T1
+  inx
+  cpx #8
+  bne pmod_mask_loop
+  lda T2
   and #%11111110
   ldx #$2d
   stx DSPADDR
@@ -3069,6 +3229,15 @@ set_patseq:
     sta patseq+1+2*I
   .endrepeat
 
+.if LOOP_ENABLE
+  ldx #chnum-1
+  lda #0
+:
+  sta loop_count, x
+  dex
+  bpl :-
+.endif
+
   ldx temp+2
   rts
 
@@ -3082,6 +3251,7 @@ set_patseq_init:
   .endrepeat
   rts
 
+.if EFFECT_ARP
 add_arpeff:
   pha
   incx arpind
@@ -3109,6 +3279,7 @@ arp2:
 
 arp_mod:
 .byte 0,1,2,0
+.endif
 
 clamp_note:
   cmp #NOTE_MAX
@@ -3202,21 +3373,10 @@ gen_note_table_slide:
 ;    sta $100+I*16, x
 ;.endrepeat
 
-    ; Saturate when the scaled pitch exceeds 16 bits instead of letting
-    ; the >>8 result wrap (the DSP pitch limit is $3FFF).
-    lda PRODUCT+3
-    beq :+
-    lda #$ff
-    sta note_table_temp
-    lda #$3f
-    sta note_table_temp+1
-    jmp :++
-:
     lda PRODUCT+1
     sta note_table_temp
     lda PRODUCT+2
     sta note_table_temp+1
-:
     pla
     ldy PRODUCT+4
     rts
@@ -3264,21 +3424,10 @@ gen_note_table:
 ;    sta $100+I*16, x
 ;.endrepeat
 
-    ; Saturate when the scaled pitch exceeds 16 bits instead of letting
-    ; the >>8 result wrap (the DSP pitch limit is $3FFF).
-    lda PRODUCT+3
-    beq :+
-    lda #$ff
-    sta note_table_temp
-    lda #$3f
-    sta note_table_temp+1
-    jmp :++
-:
     lda PRODUCT+1
     sta note_table_temp
     lda PRODUCT+2
     sta note_table_temp+1
-:
     pla
     ldy PRODUCT+4
     rts
@@ -3360,21 +3509,10 @@ gen_note_table_linear:
 :
     jsr multiply_16bit_unsigned
     ldx PRODUCT+5
-    ; Saturate when the scaled pitch exceeds 16 bits instead of letting
-    ; the >>8 result wrap (the DSP pitch limit is $3FFF).
-    lda PRODUCT+3
-    beq :+
-    lda #$ff
-    sta note_table_temp
-    lda #$3f
-    sta note_table_temp+1
-    jmp :++
-:
     lda PRODUCT+1
     sta note_table_temp
     lda PRODUCT+2
     sta note_table_temp+1
-:
     pla
     ldy PRODUCT+4
     rts
@@ -3445,6 +3583,7 @@ sub_pitch:
   rts
 
 
+.if EFFECT_VOLSLIDE
 vol_slide_lookup:
   .byte 0,0,0,0
   .byte 1,0,0,0
@@ -3479,6 +3618,7 @@ vol_slide_lookup:
   .byte 252,253,253,253
   .byte 252,253,252,253
   .byte 252,252,252,252
+.endif
 
 .proc multiply_16bit_unsigned                                             
                 ; <T1 * <T2 = AAaa                                        
@@ -3542,6 +3682,19 @@ _dd:            lda #0
                     inc PRODUCT+3                          
                 :                                          
 
+                ; Saturate the scaled pitch at the DSP limit so callers
+                ; never need a separate 16-bit clamp.
+                lda PRODUCT+3
+                bne :+
+                lda PRODUCT+2
+                cmp #$40
+                bcc :++
+:
+                lda #$ff
+                sta PRODUCT+1
+                lda #$3f
+                sta PRODUCT+2
+:
                 rts
 .endproc           
 
