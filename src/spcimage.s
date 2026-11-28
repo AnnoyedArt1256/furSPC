@@ -142,6 +142,13 @@ echo_mask: .res 1
 .endif
 flags: .res 1
 do_port: .res chnum
+.if LEGATO_EFFECT
+legato_delay: .res chnum
+legato_amt: .res chnum
+.endif
+.if PORTA_NOTE
+porta_gate: .res 1
+.endif
 
 .segment "SPCIMAGE"
 .align 256
@@ -601,6 +608,9 @@ skip_echo:
   sta patind
   sta mframeN
   sta delay_do
+.if PORTA_NOTE
+  sta porta_gate
+.endif
   ldx #chnum-1
 init_chan_loop:
   lda #$7f
@@ -653,6 +663,10 @@ init_chan_loop:
   sta doMacroPR, x
 .endif
   sta sample_mapped, x
+.if LEGATO_EFFECT
+  sta legato_delay, x
+  sta legato_amt, x
+.endif
   lda #4
   sta note_tick, x
   dex
@@ -816,6 +830,21 @@ effectE5:
   lda #95
 :
   sta note_dest, x
+.if PORTA_NOTE
+  lda porta_gate
+  ora kon_table, x
+  sta porta_gate
+  lda isoff, x
+  beq :+
+  ; the voice is silent: start it at the target instead of sliding
+  lda #0
+  sta slide_amt, x
+  sta slide_amt_sign, x
+  sta do_port, x
+  sta didporta, x
+  jmp begnote
+:
+.endif
 
   lda note_n, x
   cmp note_dest, x
@@ -901,6 +930,17 @@ effectEB:
   sta finepitch, x
   jmp begnote
 .endmacro
+
+.if LEGATO_EFFECT
+effectFA:
+  get_patzp
+  ldx ch
+  sta legato_delay, x
+  ldy #0
+  get_patzp
+  sta legato_amt, x
+  jmp begnote
+.endif
 
 .macro add_ECxx
 effectEC:
@@ -1095,6 +1135,12 @@ other_effects:
   lda effects_temp
   cmp #$F9
   beq adsr_dispatch
+.if LEGATO_EFFECT
+  cmp #$FA
+  bne :+
+  jmp effectFA
+:
+.endif
   jmp check_fb
 adsr_dispatch:
   get_patzp
@@ -1333,7 +1379,7 @@ eff_hi:
 
 .macro add_advance_routine
 advance:
-  .local skipD, noIns, noVol, beg, blank2, blank3, hasNote, wait, note_off
+  .local skipD, noIns, noVol, beg, blank2, blank3, hasNote, wait, note_off, porta_skip
 beg:
   lda ch
   asl a
@@ -1365,6 +1411,24 @@ begnote:
 :
   jmp other_effects
 cont_advance:
+.if PORTA_NOTE
+  ldx ch
+  lda porta_gate
+  and kon_table, x
+  beq porta_skip
+  lda porta_gate
+  and kon_table+8, x
+  sta porta_gate
+  lda isoff, x
+  bne porta_skip
+  ; 03xx on a sounding channel: keep the voice and slide from the
+  ; current note instead of retriggering at the target.
+  lda #1
+  sta dur, x
+  ldy #0
+  jmp end_advance
+porta_skip:
+.endif
   lda temp
   and #$7f
   ldx ch
@@ -2406,6 +2470,31 @@ sm_next:
   beq :+
   jmp sm_loop
 :
+.if LEGATO_EFFECT
+  ; delayed legato (E6xy/E8xy/E9xy): transpose after the delay expires
+  ldx #chnum-1
+legato_tick_loop:
+  lda legato_delay, x
+  beq legato_tick_next
+  dec a
+  sta legato_delay, x
+  bne legato_tick_next
+  lda legato_amt, x
+  beq legato_tick_next
+  clc
+  adc note_n, x
+  bpl :+
+  lda #0
+  jmp :++
+: cmp #95
+  bcc :+
+  lda #95
+:
+  sta note_n, x
+legato_tick_next:
+  dex
+  bpl legato_tick_loop
+.endif
 
   ; pre-pitch-slide code
   ldx #chnum-1

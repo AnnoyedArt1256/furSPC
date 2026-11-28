@@ -41,6 +41,9 @@ FINALLY, an SNES driver that is not total dogwater to use!
   * E1xx: note slide up
   * E2xx: note slide down
   * E5xx: note fine-pitch
+  * E6xy: quick legato (x: delay/direction, y: semitones)
+  * E8xy: quick legato up (x: delay, y: semitones)
+  * E9xy: quick legato down (x: delay, y: semitones)
   * EAxx: legato
   * ECxx: note cut
 

@@ -93,6 +93,12 @@ macro_wave_used = any(True for _ in instrument_macros(module, MacroCode.WAVE))
 macro_spec_used = any(True for _ in instrument_macros(module, MacroCode.EX1))
 macro_gain_used = any(True for _ in instrument_macros(module, MacroCode.EX2))
 macro_noise_used = any(True for _ in instrument_macros(module, MacroCode.DUTY))
+# Quick legato (E6xy/E8xy/E9xy) and the 03xx note-trigger gate each add
+# per-channel state and a per-tick routine, so only assemble them when used.
+legato_used = any(cmd in (0xE6, 0xE8, 0xE9) for cmd, _ in all_effects(module))
+porta_note_used = any(
+    cmd == 0x03 and val not in (0, 0xFFFF) for cmd, val in all_effects(module)
+)
 # Wavetable instruments need their selected wave set on note-on even when
 # they have no WAVE macro. Furnace keeps wavetable animation on the first
 # frame, so only wave_indices[0] is the default.
@@ -210,6 +216,8 @@ with open("src/features.inc", "w") as feature_file:
     feature_file.write(".define MACRO_SPEED %d\n" % (1 if macro_speed_used else 0))
     feature_file.write(".define PITCH_CLAMP %d\n" % (1 if pitch_clamp_used else 0))
     feature_file.write(".define WAVE_DEFAULT %d\n" % (1 if wave_default_used else 0))
+    feature_file.write(".define LEGATO_EFFECT %d\n" % (1 if legato_used else 0))
+    feature_file.write(".define PORTA_NOTE %d\n" % (1 if porta_note_used else 0))
 
 speed_type = len(module.subsongs[subsong].speed_pattern)
 song_clock = module.subsongs[subsong].timing.clock_speed
@@ -252,6 +260,7 @@ def comp(pat):
         elif pat[i] == 0xF7: i += 3
         elif pat[i] == 0xF8: i += 2
         elif pat[i] == 0xF9: i += 3
+        elif pat[i] == 0xFA: i += 3
         elif pat[i] == 0xFF: i += 2
         elif pat[i] == 0xFD:
             i += 1
@@ -283,13 +292,6 @@ def conv_pattern(pattern):
     bitind = 0
     oldins = -1
     for row in pattern.data:
-        has03xx = 0
-        for l in row.effects:
-            k = list(l)
-            if k[0] == 0x03 and k[1] > 0:
-                has03xx = 1
-                break
-
         temp = []
         notnote = 0
         new_byte = 0
@@ -385,6 +387,25 @@ def conv_pattern(pattern):
                     temp.extend([0xF2])
                 else:
                     temp.extend([0xE6, vib])
+                continue
+            if k[0] in (0xE6, 0xE8, 0xE9):
+                # Delayed legato: transpose the current note by y semitones
+                # after x ticks. A zero y cancels a pending transposition.
+                new_byte = 1
+                amount = k[1] & 0x0f
+                if amount == 0:
+                    temp.extend([0xFA, 0, 0])
+                else:
+                    if k[0] == 0xE6:
+                        delay = ((k[1] >> 4) & 0x07) + 1
+                        signed = -amount if k[1] & 0x80 else amount
+                    elif k[0] == 0xE8:
+                        delay = ((k[1] >> 4) & 0x0f) + 1
+                        signed = amount
+                    else:
+                        delay = ((k[1] >> 4) & 0x0f) + 1
+                        signed = -amount
+                    temp.extend([0xFA, delay, signed & 0xff])
                 continue
             if k[0] == 0x08:
                 new_byte = 1
@@ -487,10 +508,8 @@ def conv_pattern(pattern):
             notnote = 1
             new_byte = 1
             temp.append(0xFE)
-        elif str(row.note) == "__" or (has03xx == 1):
-            if has03xx == 0:
-                notnote = 1
-            #temp.append(0x80)
+        elif str(row.note) == "__":
+            notnote = 1
         else:
             new_byte = 1
             temp.append(max(min(notes.index(str(row.note))+(row.octave*12)+note_transpose,0xDF-0x80),0)+0x80)
