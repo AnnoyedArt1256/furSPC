@@ -2723,6 +2723,9 @@ vol_loop:
 .repeat 8, I
   ldx #I
   jsr doFinePitch
+.if PITCH_CLAMP
+  jsr clamp_pitch
+.endif
   ldx #I<<4
   stx DSPADDR
   lda voloutl+I
@@ -2914,6 +2917,21 @@ clamp_note:
   lda #95
 :
   rts
+
+.if PITCH_CLAMP
+; Furnace caps the SNES pitch register at $3FFF. Without this, a high
+; note wraps the high byte and the DSP uses the wrong (default-ish) pitch.
+clamp_pitch:
+  lda temp+1
+  cmp #$40
+  bcc :+
+  lda #$3f
+  sta temp+1
+  lda #$ff
+  sta temp
+:
+  rts
+.endif
 
 note_table_lo:
     .incbin "note_lo.bin"

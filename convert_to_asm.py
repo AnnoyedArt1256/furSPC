@@ -14,6 +14,12 @@ dups = {}
 
 print(sys.argv)
 module = FurnaceModule(sys.argv[1])
+if not module.instruments:
+    print(
+        "error: no instruments found; add at least one instrument in Furnace",
+        file=sys.stderr,
+    )
+    raise SystemExit(1)
 non_brr_samples = []
 for sample_index, sample in enumerate(module.samples):
     depth = getattr(sample.meta, "depth", None)
@@ -97,6 +103,47 @@ macro_speed_used = any(
     for macro in feature.macros
 )
 
+# The pitch clamp is only needed when a reachable note can push the final
+# DSP pitch past $3FFF. Use the highest pattern note plus the largest
+# positive arpeggio macro offset, evaluated at every sample rate.
+_song_note_names = ["C_", "Cs", "D_", "Ds", "E_", "F_", "Fs", "G_", "Gs", "A_", "As", "B_"]
+_max_note = -1
+for _pat in module.patterns:
+    if _pat.subsong != subsong:
+        continue
+    for _row in _pat.data:
+        try:
+            _value = (
+                _song_note_names.index(str(_row.note))
+                + _row.octave * 12
+                + note_transpose
+            )
+        except (TypeError, ValueError):
+            continue
+        _max_note = max(_max_note, _value)
+_max_arp = 0
+for _macro in instrument_macros(module, MacroCode.ARP):
+    for _value in _macro.data:
+        if isinstance(_value, int) and _value >= 0:
+            _max_arp = max(_max_arp, _value)
+if _max_note >= 0:
+    _max_note = min(_max_note + _max_arp, 95)
+pitch_clamp_used = False
+if _max_note >= 0:
+    _cnote = 440 * (2 ** (float(12 * 4 - 69 - 0.5) / 12.0))
+    for _sample in module.samples:
+        _rate = _sample.meta.sample_rate
+        if not _rate:
+            continue
+        _factor = int((_rate / _cnote) * 16)
+        _freq = module.meta.tuning * (2 ** ((_max_note - 57) / 12.0))
+        _pitch = (((int(_freq) & 0xFFFF) * _factor) >> 8) & 0xFFFF
+        if not linear_pitch:
+            _pitch += 0x100
+        if _pitch > 0x3FFF:
+            pitch_clamp_used = True
+            break
+
 # Echo is only useful if it is enabled and at least one channel is routed
 # to it, either by the initial mask, a 12xx effect, or an EX1 special macro.
 echo_on = bool(flags.get('echo', False))
@@ -151,6 +198,7 @@ with open("src/features.inc", "w") as feature_file:
     feature_file.write(".define MACRO_GAIN %d\n" % (1 if macro_gain_used else 0))
     feature_file.write(".define MACRO_NOISE %d\n" % (1 if macro_noise_used else 0))
     feature_file.write(".define MACRO_SPEED %d\n" % (1 if macro_speed_used else 0))
+    feature_file.write(".define PITCH_CLAMP %d\n" % (1 if pitch_clamp_used else 0))
 
 speed_type = len(module.subsongs[subsong].speed_pattern)
 song_clock = module.subsongs[subsong].timing.clock_speed

@@ -574,13 +574,11 @@ def main(argv: list[str] | None = None) -> int:
     for input_path in inputs:
         input_path = input_path.resolve()
         try:
-            needs_metadata = (
-                args.title is None
-                or args.album is None
-                or args.artist is None
-                or custom_time is None
-            )
-            module = FurnaceModule(str(input_path)) if needs_metadata else None
+            module = FurnaceModule(str(input_path))
+            if not module.instruments:
+                raise ValueError(
+                    "no instruments found; add at least one instrument in Furnace"
+                )
             if args.title is None or args.album is None or args.artist is None:
                 default_title, default_album, default_artist = _module_tags(module, input_path)
             else:
