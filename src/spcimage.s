@@ -244,8 +244,9 @@ yt: .res 1
 wav_length: .res chnum
 cursamp: .res chnum
 
-; Directory entries for the eight wave-synth voices. They only need to be
-; inside the DSP's 1KB sample-directory block, not at a fixed address.
+; Directory entries for the eight wave-synth voices. The DSP's wave
+; source numbers point here, so this table must stay at $400.
+.res $400-*
 .align 4
 wave_dir:
   .res 4*8
@@ -1352,6 +1353,12 @@ cont_advance:
   and #$7f
   ldx ch
   sta note_n, x
+.if WAVE_DEFAULT
+  lda ins, x
+  tay
+  lda insWD, y
+  sta duty, x
+.endif
   lda note_tick, x
   cmp #96
   bne :+

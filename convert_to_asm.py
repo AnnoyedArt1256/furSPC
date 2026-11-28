@@ -93,6 +93,16 @@ macro_wave_used = any(True for _ in instrument_macros(module, MacroCode.WAVE))
 macro_spec_used = any(True for _ in instrument_macros(module, MacroCode.EX1))
 macro_gain_used = any(True for _ in instrument_macros(module, MacroCode.EX2))
 macro_noise_used = any(True for _ in instrument_macros(module, MacroCode.DUTY))
+# Wavetable instruments need their selected wave set on note-on even when
+# they have no WAVE macro. Furnace keeps wavetable animation on the first
+# frame, so only wave_indices[0] is the default.
+wave_default_used = any(
+    isinstance(feature, InsFeatureAmiga)
+    and feature.use_wave
+    and len(module.wavetables) > 0
+    for ins in module.instruments
+    for feature in ins.features
+)
 # Furnace macro speed (step length) is per macro; only emit the extra
 # counters and tables when at least one macro holds a step for >1 tick.
 macro_speed_used = any(
@@ -199,6 +209,7 @@ with open("src/features.inc", "w") as feature_file:
     feature_file.write(".define MACRO_NOISE %d\n" % (1 if macro_noise_used else 0))
     feature_file.write(".define MACRO_SPEED %d\n" % (1 if macro_speed_used else 0))
     feature_file.write(".define PITCH_CLAMP %d\n" % (1 if pitch_clamp_used else 0))
+    feature_file.write(".define WAVE_DEFAULT %d\n" % (1 if wave_default_used else 0))
 
 speed_type = len(module.subsongs[subsong].speed_pattern)
 song_clock = module.subsongs[subsong].timing.clock_speed
@@ -723,6 +734,7 @@ if len(module.wavetables) > 0:
 
 adsrModes = []
 wav_lens = []
+default_waves = []
 pre_waves = {}
 env_dups = {}
 has_noise = []
@@ -755,9 +767,9 @@ for i in range(len(module.instruments)):
             # source waveform is emitted as a looping BRR wavetable.
             used_waves = []
             if synth is not None and synth.enabled:
-                for w in synth.wave_indices:
-                    if 0 <= w < len(module.wavetables) and w not in used_waves:
-                        used_waves.append(w)
+                w = synth.wave_indices[0]
+                if 0 <= w < len(module.wavetables):
+                    used_waves.append(w)
             if macros is not None:
                 for macro in macros.macros:
                     if macro.kind != MacroCode.WAVE:
@@ -809,6 +821,7 @@ for i in range(len(module.instruments)):
 
     if not use_wave:
         wav_lens.append(16)
+    default_waves.append(default_wave)
 
     a = filter(
         lambda x: (
@@ -1397,6 +1410,11 @@ for i in range(len(adsrModes)):
         f.write("\n")
     else:
         f.write(", ")
+
+f.write(".if WAVE_DEFAULT\n")
+f.write("insWD:\n")
+f.write(".byte " + ", ".join(str(w) for w in default_waves) + "\n")
+f.write(".endif\n")
 
 f.write("insWL:\n")
 f.write(".lobytes ")
