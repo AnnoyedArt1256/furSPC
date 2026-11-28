@@ -87,7 +87,7 @@ sample_delta: .res chnum
 
 kon_mirror: .res 1
 koff_mirror: .res 1
-.if SNES_ENV_REL || SNES_ENV_DEC || SNES_ENV_EXP || SNES_ENV_GAIN
+.if SNES_ENV_REL || SNES_ENV_DEC || SNES_ENV_EXP
 rel_pending: .res 1
 rel_gain: .res 1
 .endif
@@ -267,7 +267,7 @@ on_ch:
     lda kon_mirror
     ora kon_table, x
     sta kon_mirror
-.if SNES_ENV_REL || SNES_ENV_DEC || SNES_ENV_EXP || SNES_ENV_GAIN
+.if SNES_ENV_REL || SNES_ENV_DEC || SNES_ENV_EXP
     ; a new note cancels a release still waiting for this tick's flush
     lda rel_pending
     and kon_table+8, x
@@ -347,7 +347,7 @@ load_ins_env:
   rts
 
 .macro add_off_ch
-    .local skip
+    .local skip, do_koff
     pha
     stx xt
     sty yt
@@ -355,34 +355,40 @@ load_ins_env:
     tax
     lda insM, x
     and #3
+    tay
+.if SNES_ENV_DIRECT || SNES_ENV_GAIN
 .if SNES_ENV_DIRECT
     cmp #0
-    bne :+
-    ldx xt
-    lda koff_mirror
-    ora kon_table, x
-    sta koff_mirror
-    jmp skip
-:
+    beq do_koff
 .endif
-.if SNES_ENV_REL || SNES_ENV_DEC || SNES_ENV_EXP || SNES_ENV_GAIN
+.if SNES_ENV_GAIN
+    cpy #3
+    beq do_koff
+.endif
+.endif
+.if SNES_ENV_REL || SNES_ENV_DEC || SNES_ENV_EXP
     ldx xt
     lda rel_pending
     ora kon_table, x
     sta rel_pending
 .endif
-.if SNES_ENV_DEC || SNES_ENV_EXP || SNES_ENV_GAIN
-    ; re-read the mode: A was overwritten by the pending-bit update
-    lda ins, x
-    tay
-    lda insM, y
-    and #3
-    cmp #1
-    beq :+
+.if SNES_ENV_DEC || SNES_ENV_EXP
+    ; Modes 1 and 2 reach this point; only mode 2 releases through
+    ; the gain register, mode 1 writes the sustain register instead.
+    cpy #1
+    beq skip
+    ldx xt
     lda rel_gain
     ora kon_table, x
     sta rel_gain
-:
+.endif
+.if SNES_ENV_DIRECT || SNES_ENV_GAIN
+    jmp skip
+do_koff:
+    ldx xt
+    lda koff_mirror
+    ora kon_table, x
+    sta koff_mirror
 .endif
 skip:
     ldx xt
@@ -393,7 +399,7 @@ skip:
 ; Release is applied during the tick's register flush, next to the
 ; per-channel envelope writes, so a note-off lands on the same SPC frame
 ; as Furnace's writeEnv instead of several milliseconds early.
-.if SNES_ENV_REL || SNES_ENV_DEC || SNES_ENV_EXP || SNES_ENV_GAIN
+.if SNES_ENV_REL || SNES_ENV_DEC || SNES_ENV_EXP
 flush_rel:
   lda rel_pending
   beq flush_rel_done
@@ -402,7 +408,7 @@ flush_rel_loop:
   lda rel_pending
   and kon_table, x
   beq flush_rel_next
-.if SNES_ENV_DEC || SNES_ENV_EXP || SNES_ENV_GAIN
+.if SNES_ENV_DEC || SNES_ENV_EXP
   lda rel_gain
   and kon_table, x
   beq flush_rel_adsr
@@ -432,7 +438,7 @@ flush_rel_next:
   lda rel_pending
   and kon_table+8, x
   sta rel_pending
-.if SNES_ENV_DEC || SNES_ENV_EXP || SNES_ENV_GAIN
+.if SNES_ENV_DEC || SNES_ENV_EXP
   lda rel_gain
   and kon_table+8, x
   sta rel_gain
@@ -2859,7 +2865,7 @@ vol_loop:
   stx DSPADDR
   sta DSPDATA
 
-.if SNES_ENV_REL || SNES_ENV_DEC || SNES_ENV_EXP || SNES_ENV_GAIN
+.if SNES_ENV_REL || SNES_ENV_DEC || SNES_ENV_EXP
   jsr flush_rel
 .endif
 

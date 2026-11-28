@@ -866,7 +866,14 @@ for i in range(len(module.instruments)):
                 env_bytes.append(0xa0|(j.envelope.r&31))
         else:
             adsrMode = 3
-            env_bytes = [0, 0, j.gain&0xff]
+            # The gain register packs the mode into bits 7-5 and the level
+            # (direct, 0-127) or rate (increase/decrease, 0-31) below it.
+            gain_mode = int(j.gain_mode.value)
+            if gain_mode == 0:
+                gain_value = j.gain & 0x7f
+            else:
+                gain_value = (gain_mode << 5) | (j.gain & 0x1f)
+            env_bytes = [0, 0, gain_value]
         break
     if env_bytes is None:
         env_bytes = [255, 224]
