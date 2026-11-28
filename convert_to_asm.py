@@ -294,17 +294,14 @@ def conv_pattern(pattern):
                 new_byte = 1
                 temp.extend([0xE5, k[1], max(min(notes.index(str(row.note))+(row.octave*12)+note_transpose,0xDF-0x80),0)])
                 continue
-            if k[0] == 0x04 and (k[1]>>4) == 0:
-                new_byte = 1
-                temp.extend([0xF2])
-                continue
-            if k[0] == 0x04 and (k[1]&15) == 0:
-                new_byte = 1
-                temp.extend([0xF2])
-                continue
             if k[0] == 0x04:
                 new_byte = 1
-                temp.extend([0xE6, k[1]])
+                # Furnace stores an empty effect value as -1 and plays it as 0.
+                vib = 0 if k[1] == 0xFFFF else (k[1] & 0xFF)
+                if vib == 0 or (vib >> 4) == 0 or (vib & 15) == 0:
+                    temp.extend([0xF2])
+                else:
+                    temp.extend([0xE6, vib])
                 continue
             if k[0] == 0x08:
                 new_byte = 1

@@ -795,14 +795,10 @@ effectE5:
 .endmacro
 
 .macro add_04xx
-  .local retskip
 effectE6:
   get_patzp
   ldx ch
   sta vibrato_param, x
-  beq retskip
-  sta vibrato_phase, x
-retskip:
   jmp begnote
 .endmacro
 
@@ -3053,9 +3049,12 @@ lin_vib_sine:
   .byte 129, 130, 131, 134, 139, 144, 150, 158, 166, 175, 185, 196, 207, 219, 231, 244
 
 lin_vib_lookup:
+  ; Furnace's linear vibrato is (depth * vibTable) >> 4 in 1/128
+  ; semitone units (vibratoFine 15 cancels its /15). Dividing by 15
+  ; here made the vibrato about 15x too weak.
   .repeat 16, J
     .repeat 16, I
-      .byte ((J * (I*8+4)) >> 4) / 15
+      .byte (J * (I*8+4)) >> 4
     .endrepeat
   .endrepeat
 .endif
