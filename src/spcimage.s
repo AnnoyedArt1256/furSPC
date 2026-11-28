@@ -86,7 +86,9 @@ sample_mapped: .res chnum
 
 kon_mirror: .res 1
 koff_mirror: .res 1
-rel_pending: .res 1
+chE0: .res chnum
+chE1: .res chnum
+chE2: .res chnum
 
 patzp: .res 4
 
@@ -229,9 +231,6 @@ on_ch:
     ora kon_table, x
     sta kon_mirror
     stx xt
-    lda rel_pending
-    and kon_table+8, x
-    sta rel_pending
     lda ins, x
     sta wav_length, x
     tax
@@ -245,7 +244,6 @@ on_ch:
 @skip:
 
     ldx xt
-.if SNES_ENV_GAIN
     lda ins, x
     tax
     lda insM, x
@@ -255,36 +253,57 @@ on_ch:
 
     ldx xt
 
-    lda ins, x
-    tay
-    lda insEL, y
-    sta temp+2
-    lda insEH, y
-    sta temp+3
-
     txa
     xcn a
     ora #5
     sta DSPADDR
-    tax
     lda #0
     sta DSPDATA
-    inx
-    stx DSPADDR
+    txa
+    xcn a
+    ora #6
+    sta DSPADDR
     lda #0
     sta DSPDATA
-    inx
-    ldy #2
-    ldya temp+2
-    stx DSPADDR
+    txa
+    xcn a
+    ora #7
+    sta DSPADDR
+    lda chE2, x
     sta DSPDATA
 on_skip2:
-.endif
+
     ldx xt
     lda #$ff
     sta sample_mapped, x
     pla
     rts
+
+load_ins_env:
+  lda ins, x
+  tay
+  lda insEL, y
+  sta temp+2
+  lda insEH, y
+  sta temp+3
+  ldy #0
+  ldya temp+2
+  sta chE0, x
+  iny
+  ldya temp+2
+  sta chE1, x
+  lda #0
+  sta chE2, x
+  lda ins, x
+  tay
+  lda insM, y
+  and #3
+  beq load_env_done
+  ldy #2
+  ldya temp+2
+  sta chE2, x
+load_env_done:
+  rts
 
 .macro add_off_ch
     .local skip, skip2, skip3
@@ -313,18 +332,11 @@ on_skip2:
 .if SNES_ENV_DEC || SNES_ENV_EXP || SNES_ENV_GAIN
     ldx xt
 
-    lda ins, x
-    tay
-    lda insEL, y
-    sta temp+2
-    lda insEH, y
-    sta temp+3
     txa
     xcn a
     ora #7
     sta DSPADDR
-    ldy #2
-    ldya temp+2
+    lda chE2, x
     sta DSPDATA
 
     txa
@@ -339,9 +351,7 @@ on_skip2:
 skip2:
 .if SNES_ENV_REL
     ldx xt
-    lda rel_pending
-    ora kon_table, x
-    sta rel_pending
+    jsr write_rel
 .endif
 skip3:
 skip:
@@ -351,63 +361,12 @@ skip:
 .endmacro
 
 write_rel:
-  lda ins, x
-  tay
-  lda insEL, y
-  sta temp+2
-  lda insEH, y
-  sta temp+3
   txa
   xcn a
   ora #6
   sta DSPADDR
-  ldy #2
-  ldya temp+2
+  lda chE2, x
   sta DSPDATA
-  rts
-
-flush_rel:
-  lda rel_pending
-  beq flush_done
-  ldx #chnum-1
-flush_loop:
-  lda rel_pending
-  and kon_table, x
-  beq flush_next
-  lda ins, x
-  tay
-  lda insEL, y
-  sta temp+2
-  lda insEH, y
-  sta temp+3
-  ldy #1
-  ldya temp+2
-  lsr a
-  sta temp
-  txa
-  xcn a
-  ora #8
-  sta DSPADDR
-  lda DSPDATA
-  sta temp+4
-  cmp temp
-  bcc flush_next
-  lda temp
-  ora #$0f
-  sta temp
-  lda temp+4
-  cmp temp
-  beq flush_do
-  bcs flush_next
-flush_do:
-  jsr write_rel
-  lda rel_pending
-  eor kon_table, x
-  sta rel_pending
-flush_next:
-  dex
-  bpl flush_loop
-flush_done:
   rts
 
 off_ch:
@@ -616,7 +575,6 @@ init_chan_done:
 
   ldx #0
   stx koff_mirror
-  stx rel_pending
   stx patind
   jsr set_patseq
   ldx #chnum-1
@@ -1003,11 +961,142 @@ add_ext
 
 other_effects:
   lda effects_temp
+  cmp #$F9
+  beq adsr_dispatch
+  jmp check_fb
+adsr_dispatch:
+  get_patzp
+  sta temp
+  get_patzp
+  sta temp+1
+  ldx ch
+  lda temp
+  beq adsr_attack
+  cmp #1
+  beq adsr_decay
+  cmp #2
+  beq adsr_sustain
+  cmp #3
+  bne adsr_skip
+  jmp adsr_release
+adsr_skip:
+  jmp begnote
+
+adsr_attack:
+  lda temp+1
+  and #15
+  sta temp+2
+  lda chE0, x
+  and #$f0
+  ora temp+2
+  sta chE0, x
+  txa
+  xcn a
+  ora #5
+  sta DSPADDR
+  lda chE0, x
+  sta DSPDATA
+  jmp begnote
+
+adsr_decay:
+  lda temp+1
+  and #7
+  asl a
+  asl a
+  asl a
+  asl a
+  sta temp+2
+  lda chE0, x
+  and #$8f
+  ora temp+2
+  sta chE0, x
+  txa
+  xcn a
+  ora #5
+  sta DSPADDR
+  lda chE0, x
+  sta DSPDATA
+  jmp begnote
+
+adsr_sustain:
+  lda temp+1
+  and #7
+  asl a
+  asl a
+  asl a
+  asl a
+  asl a
+  sta temp+2
+  lda chE1, x
+  and #$1f
+  ora temp+2
+  sta chE1, x
+  lda ins, x
+  tay
+  lda insM, y
+  and #3
+  cmp #1
+  bne adsr_sustain_write
+  lda chE2, x
+  and #$1f
+  ora temp+2
+  sta chE2, x
+adsr_sustain_write:
+  txa
+  xcn a
+  ora #6
+  sta DSPADDR
+  lda chE1, x
+  sta DSPDATA
+  jmp begnote
+
+adsr_release:
+  lda temp+1
+  and #31
+  sta temp+2
+  lda ins, x
+  tay
+  lda insM, y
+  and #3
+  cmp #0
+  beq adsr_release_direct
+  cmp #1
+  beq adsr_release_mode1
+  cmp #2
+  beq adsr_release_mode2
+  jmp begnote
+adsr_release_mode1:
+  lda chE2, x
+  and #$e0
+  ora temp+2
+  sta chE2, x
+  jmp begnote
+adsr_release_mode2:
+  lda chE2, x
+  and #$e0
+  ora temp+2
+  sta chE2, x
+  jmp begnote
+adsr_release_direct:
+  lda chE1, x
+  and #$e0
+  ora temp+2
+  sta chE1, x
+  txa
+  xcn a
+  ora #6
+  sta DSPADDR
+  lda chE1, x
+  sta DSPDATA
+  jmp begnote
+
+check_fb:
   cmp #$FB
   bne :+
   ldx ch
   get_patzp
   sta ins, x
+  jsr load_ins_env
   jmp begnote
 :
   cmp #$FC
@@ -1220,25 +1309,17 @@ cont_advance:
   sta doMacroPR, x
 .endif
 
-  lda ins, x
-  tay
-  lda insEL, y
-  sta temp+2
-  lda insEH, y
-  sta temp+3
   txa
   xcn a
   ora #5
   sta DSPADDR
-  ldy #0
-  ldya temp+2
+  lda chE0, x
   sta DSPDATA
   txa
   xcn a
   ora #6
   sta DSPADDR
-  ldy #1
-  ldya temp+2
+  lda chE1, x
   sta DSPDATA
 
 :
@@ -1260,6 +1341,7 @@ wait:
   lda temp
   and #$3f
   sta ins, x
+  jsr load_ins_env
   jmp begnote
 :
   lda temp
@@ -2483,8 +2565,6 @@ vol_loop:
   ldx #$2d
   stx DSPADDR
   sta DSPDATA
-
-  jsr flush_rel
 
   rts
 .endproc
