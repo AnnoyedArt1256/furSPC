@@ -2,7 +2,11 @@ from chipchune.furnace.module import FurnaceModule
 from chipchune.furnace.data_types import InsFeatureMacro, InsFeatureSNES, InsFeatureAmiga, InsFeatureWaveSynth
 from chipchune.furnace.enums import MacroCode, MacroItem, MacroType
 from chipchune.furnace.enums import InstrumentType, SNESSusMode
-import sys, math
+import sys, math, os
+
+if __name__ == "__main__" and os.environ.get("FURSPC_LOWLEVEL") != "1":
+    from convert_cli import main
+    raise SystemExit(main())
 
 subsong = 0
 note_transpose = 0
@@ -406,13 +410,13 @@ if echo_used:
         for i in range(8):
             f.write(str(int(flags["echoFilter"+str(i)])&0xff)+", ")
 
-        f.write(str(0xff-((int(flags['echoDelay'])&15)<<3))+", ")
+        f.write(str(0xf8-((int(flags['echoDelay'])&15)<<3))+", ")
         f.write(str(int(flags['echoMask']))+"\n")
     except:
         f.write("32, 0, 0, 0, 0, ")
         for i in range(8):
             f.write("0, ")
-        f.write("248\n")
+        f.write("248, 0\n")
 
 relV = []
 relA = []

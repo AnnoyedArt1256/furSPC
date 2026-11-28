@@ -47,8 +47,17 @@ FINALLY, an SNES driver that is not total dogwater to use!
 when you've finished / want to test out this driver:
 * open the terminal/command prompt **to the furSPC directory**
 * run `convert.sh your_fur_file.fur` or `convert.bat file.fur` (depending on your OS)
-* in the `furSPC` directory you'll hopefully see a file called **`furSPC-test.spc`**
-  * that's your .spc file that you can run on any .spc compatible player!
+* by default the output is written next to the input with the same name and a `.spc` extension
+* the output file and ID666 tags can be specified on the command line:
+  * `convert.sh song.fur -o build/song.spc`
+  * `convert.sh song.fur --title "Song Title" --album "Album" --artist "Artist" --time 2:38`
+  * `convert.sh --time` accepts seconds (`158`) or `MM:SS` (`2:38`)
+* an entire directory can be converted at once:
+  * `convert.sh songs/ -o build`
+  * add `--recursive` to include subdirectories
+* when `--title`, `--album`, or `--artist` is omitted, the values are read from the `.fur` metadata. If the title is empty, the input filename is used.
+* in the output directory you'll hopefully see your `.spc` files
+  * those are the .spc files that you can run on any .spc compatible player!
 
 Hopefully you'll have fun with this driver alongside [furNES](https://github.com/AnnoyedArt1256/furNES) and [furC64](https://github.com/AnnoyedArt1256/furC64) :D
 

@@ -439,6 +439,31 @@ table_fil:
   stya DSPADDR
 
 .if ECHO_ENABLE
+  ; The SNES echo buffer is ordinary APU RAM. Clear it before enabling
+  ; echo so feedback cannot amplify stale RAM contents at startup.
+  lda echo_info
+  and #32
+  bne clear_echo_done
+  lda echo_info+4
+  beq clear_echo_done
+  lda #0
+  sta temp
+  lda echo_info+13
+  sta temp+1
+  ldy #0
+clear_echo_page:
+  lda #0
+  sta (<temp),y
+  iny
+  bne clear_echo_page
+  inc temp+1
+  lda temp+1
+  cmp #$f8
+  bne clear_echo_page
+clear_echo_done:
+.endif
+
+.if ECHO_ENABLE
   lda echo_info
   and #32
   bne skip_echo
