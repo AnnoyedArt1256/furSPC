@@ -12,6 +12,12 @@ subsong = 0
 note_transpose = 0
 dups = {}
 
+# Internal note numbering is biased so that index 0 is the lowest note the
+# song needs and index NOTE_BASE is C_0. Songs without negative notes use a
+# base of zero (the original 96-entry table); negative notes extend the
+# table downward enough to cover them. Set after scanning the patterns.
+NOTE_BASE = 0
+
 print(sys.argv)
 module = FurnaceModule(sys.argv[1])
 if not module.instruments:
@@ -124,6 +130,7 @@ macro_speed_used = any(
 # positive arpeggio macro offset, evaluated at every sample rate.
 _song_note_names = ["C_", "Cs", "D_", "Ds", "E_", "F_", "Fs", "G_", "Gs", "A_", "As", "B_"]
 _max_note = -1
+_min_note = 999
 for _pat in module.patterns:
     if _pat.subsong != subsong:
         continue
@@ -137,11 +144,28 @@ for _pat in module.patterns:
         except (TypeError, ValueError):
             continue
         _max_note = max(_max_note, _value)
+        _min_note = min(_min_note, _value)
+# Negative notes need a lowered table. Allow one extra octave of downward
+# slides below the lowest written note, capped at Furnace's C_-5 floor.
+if _min_note < 0:
+    NOTE_BASE = min(60, -_min_note + 15)
+# Note slides and quick legato can walk below C_0 even when no pattern note
+# is written there, so keep the full octave range available for those.
+if any(
+    cmd in (0xE2, 0xE9) or (cmd == 0xE6 and (val & 0x80))
+    for cmd, val in all_effects(module)
+):
+    NOTE_BASE = max(NOTE_BASE, 60)
 _max_arp = 0
 for _macro in instrument_macros(module, MacroCode.ARP):
     for _value in _macro.data:
         if isinstance(_value, int) and _value >= 0:
             _max_arp = max(_max_arp, _value)
+# Pitch slides, arpeggio and quick legato can push the sounding note above
+# the highest note written in the pattern (up to B_7, the clamp limit), so
+# include them when deciding whether the $3FFF pitch clamp is needed.
+if any(cmd in (0x00, 0x01, 0x04, 0xE1, 0xE6, 0xE8) for cmd, _ in all_effects(module)):
+    _max_note = max(_max_note, 95)
 if _max_note >= 0:
     _max_note = min(_max_note + _max_arp, 95)
 pitch_clamp_used = False
@@ -218,6 +242,7 @@ with open("src/features.inc", "w") as feature_file:
     feature_file.write(".define WAVE_DEFAULT %d\n" % (1 if wave_default_used else 0))
     feature_file.write(".define LEGATO_EFFECT %d\n" % (1 if legato_used else 0))
     feature_file.write(".define PORTA_NOTE %d\n" % (1 if porta_note_used else 0))
+    feature_file.write(".define NOTE_BASE %d\n" % NOTE_BASE)
 
 speed_type = len(module.subsongs[subsong].speed_pattern)
 song_clock = module.subsongs[subsong].timing.clock_speed
@@ -231,7 +256,11 @@ def comp(pat):
     while i < len(pat):
         j = i
         k = 0
-        if pat[i] >= 0x40 and pat[i] < 128: i += 1
+        if pat[i] == 0x7F:
+            # extended low note: prefix plus biased note index
+            i += 2
+            n = 2
+        elif pat[i] >= 0x40 and pat[i] < 128: i += 1
         elif pat[i] == 0xFB: i += 2
         elif pat[i] == 0xFC: i += 2
         elif pat[i] == 0xE0: i += 2
@@ -297,7 +326,7 @@ def conv_pattern(pattern):
         new_byte = 0
         if row.instrument != 65535 and oldins != row.instrument:
             new_byte = 1
-            if row.instrument < 0x40:
+            if row.instrument < 0x3f:
                 temp.append(row.instrument+0x40)
             else:
                 temp.append(0xFB)
@@ -377,7 +406,9 @@ def conv_pattern(pattern):
                 # continues the previous slide; there is no new target.
                 if str(row.note) in notes:
                     new_byte = 1
-                    temp.extend([0xE5, k[1], max(min(notes.index(str(row.note))+(row.octave*12)+note_transpose,0xDF-0x80),0)])
+                    target = notes.index(str(row.note))+(row.octave*12)+note_transpose
+                    target = max(min(target, 95), -NOTE_BASE) + NOTE_BASE
+                    temp.extend([0xE5, k[1], target])
                 continue
             if k[0] == 0x04:
                 new_byte = 1
@@ -512,7 +543,13 @@ def conv_pattern(pattern):
             notnote = 1
         else:
             new_byte = 1
-            temp.append(max(min(notes.index(str(row.note))+(row.octave*12)+note_transpose,0xDF-0x80),0)+0x80)
+            note_value = notes.index(str(row.note))+(row.octave*12)+note_transpose
+            if note_value < 0:
+                # 0x7F means "extended note": the next byte is the biased
+                # internal note index, which covers C_-5 through B_-1.
+                temp.extend([0x7F, max(note_value, -NOTE_BASE) + NOTE_BASE])
+            else:
+                temp.append(min(note_value, 0xDF-0x80)+0x80)
 
         if new_byte == 1:
             temp.append(0)
@@ -1357,7 +1394,7 @@ for i in range(len(module.instruments)):
     runs, default_sample = build_sample_map(module.instruments[i])
     lines = ".byte "+str(len(runs))+", "+str(default_sample)+"\n"
     for start_note, end_note, sample, delta in runs:
-        lines += ".byte "+str(start_note)+", "+str(end_note)+", "+str(sample)+", "+str(delta & 0xff)+"\n"
+        lines += ".byte "+str(start_note+NOTE_BASE)+", "+str(end_note+NOTE_BASE)+", "+str(sample)+", "+str(delta & 0xff)+"\n"
     if lines in sample_map_dups:
         f.write("ins"+str(i)+"SM = "+sample_map_dups[lines]+"\n")
     else:
@@ -1499,13 +1536,14 @@ f.write(".endif\n")
 f.close()
 
 tuning = module.meta.tuning
+note_table_len = 98 + NOTE_BASE
 f = open("src/note_lo.bin","wb")
-for i in range(98):
-    freq = tuning * (2**(float(i-57)/12.0))
+for i in range(note_table_len):
+    freq = tuning * (2**(float(i-NOTE_BASE-57)/12.0))
     f.write(bytearray([int(freq)&0xff]))
 f.close()
 f = open("src/note_hi.bin","wb")
-for i in range(98):
-    freq = tuning * (2**(float(i-57)/12.0))
+for i in range(note_table_len):
+    freq = tuning * (2**(float(i-NOTE_BASE-57)/12.0))
     f.write(bytearray([(int(freq)>>8)&0xff]))
 f.close()

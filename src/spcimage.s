@@ -2,6 +2,8 @@
 .include "spc-65c02.inc"
 .include "features.inc"
 
+.define NOTE_MAX NOTE_BASE+95
+
 .define loop_pattern_num 0
 .define porta_once 1
 .define SLIDE_SPEED 0
@@ -779,12 +781,12 @@ effectE3:
   sta slide_amt_sign, x
   ldx ch
 .if LINEAR_PITCH
-  lda #95
+  lda #NOTE_MAX
 .else
-  lda #88
+  lda #NOTE_BASE+88
 .endif
   sta note_dest, x
-  lda #$ff
+  lda #$01
   sta didporta, x
   lda #PORT_STEPS
   sta do_port, x
@@ -800,12 +802,12 @@ effectE4:
   sta slide_amt_sign, x
   ldx ch
 .if LINEAR_PITCH
-  lda #0
+  lda #NOTE_BASE
 .else
-  lda #8
+  lda #NOTE_BASE+8
 .endif
   sta note_dest, x
-  lda #$ff
+  lda #$01
   sta didporta, x
   lda #PORT_STEPS
   sta do_port, x
@@ -813,6 +815,7 @@ effectE4:
 .endmacro
 
 .macro add_03xx
+  .local eq_up, eq_down
 effectE5:
   get_patzp
   ldx ch
@@ -825,10 +828,7 @@ effectE5:
   bpl :+
   lda #0
 :
-  cmp #96
-  bcc :+
-  lda #95
-:
+  jsr clamp_note
   sta note_dest, x
 .if PORTA_NOTE
   lda porta_gate
@@ -849,15 +849,37 @@ effectE5:
   lda note_n, x
   cmp note_dest, x
   bne :+
+  ; Same note as the slide target: the pitch may still be offset by a
+  ; previous pitch slide, so unwind that offset instead of doing nothing.
+  lda slide_buffer_hi, x
+  bmi eq_up
+  ora slide_buffer_lo, x
+  bne eq_down
   lda #0
   sta slide_amt, x
   sta slide_amt_sign, x
+  jmp begnote
+eq_down:
+  lda #$00
+  sta slide_amt_sign, x
+  lda #$01
+  sta didporta, x
+  lda #PORT_STEPS
+  sta do_port, x
+  jmp begnote
+eq_up:
+  lda #$ff
+  sta slide_amt_sign, x
+  lda #$01
+  sta didporta, x
+  lda #PORT_STEPS
+  sta do_port, x
   jmp begnote
 :
   bcc :+
   lda #$00
   sta slide_amt_sign, x
-  lda #$ff
+  lda #$01
   sta didporta, x
   lda #PORT_STEPS
   sta do_port, x
@@ -865,7 +887,7 @@ effectE5:
 :
   lda #$ff
   sta slide_amt_sign, x
-  lda #$ff
+  lda #$01
   sta didporta, x
   lda #PORT_STEPS
   sta do_port, x
@@ -892,9 +914,8 @@ effectE9:
   ldy #0
   get_patzp
   ldx ch
-  ora #$80
   sta note_dest, x
-  lda #$ff
+  lda #$81
   sta didporta, x
   lda #PORT_STEPS
   sta do_port, x
@@ -913,9 +934,8 @@ effectEA:
   ldy #0
   get_patzp
   ldx ch
-  ora #$80
   sta note_dest, x
-  lda #$ff
+  lda #$81
   sta didporta, x
   lda #PORT_STEPS
   sta do_port, x
@@ -1355,7 +1375,7 @@ effectF1:
   sta slide_amt_sign, x
   sta slide_amt, x
   sta note_dest, x
-  lda #$ff
+  lda #$01
   sta didporta, x
   jmp begnote
 
@@ -1379,7 +1399,7 @@ eff_hi:
 
 .macro add_advance_routine
 advance:
-  .local skipD, noIns, noVol, beg, blank2, blank3, hasNote, wait, note_off, porta_skip
+  .local skipD, noIns, noVol, beg, blank2, blank3, hasNote, wait, note_off, porta_skip, note_store, ext_trigger
 beg:
   lda ch
   asl a
@@ -1432,6 +1452,9 @@ porta_skip:
   lda temp
   and #$7f
   ldx ch
+  clc
+  adc #NOTE_BASE
+note_store:
   sta note_n, x
 .if WAVE_DEFAULT
   lda ins, x
@@ -1507,6 +1530,32 @@ porta_skip:
   jmp end_advance
 
 wait:
+  lda temp
+  cmp #$7f
+  bne :+
+  ; extended note: the next byte is an already-biased note index
+  ldx ch
+  get_patzp
+  sta temp+4
+.if PORTA_NOTE
+  lda porta_gate
+  and kon_table, x
+  beq ext_trigger
+  lda porta_gate
+  and kon_table+8, x
+  sta porta_gate
+  lda isoff, x
+  bne ext_trigger
+  ; 03xx on a sounding channel: keep the voice and slide to the target
+  lda #1
+  sta dur, x
+  ldy #0
+  jmp end_advance
+ext_trigger:
+.endif
+  lda temp+4
+  jmp note_store
+:
   lda temp
   and #$40
   beq :+
@@ -2069,7 +2118,7 @@ fine_done:
   jsr add_lin_vibrato
 no_lin_vib:
 
-  ; clamp to the range covered by the note table (0 to 96.992)
+  ; clamp to the range covered by the note table (0 to NOTE_MAX+0.992)
   lda temp+1
   bmi lin_clamp_zero
   lda temp
@@ -2084,11 +2133,11 @@ no_lin_vib:
   lda temp+1
   asl
   ora temp+2
-  cmp #97
+  cmp #NOTE_MAX+2
   bcc lin_coarse_ok
-  lda #$7f
+  lda #<((NOTE_MAX+1)*128+127)
   sta temp
-  lda #$30
+  lda #>((NOTE_MAX+1)*128+127)
   sta temp+1
   jmp lin_coarse_ok
 lin_clamp_zero:
@@ -2441,16 +2490,25 @@ sm_match:
   bcs sm_delta_neg
   clc
   adc effects_temp+1
-  cmp #96
-  bcc sm_store
-  lda #95
-  jmp sm_store
+  bcs sm_high
+  jmp sm_clamp
 sm_delta_neg:
-  ; delta is a signed byte; add it and clamp to note 0
+  ; delta is a signed byte: subtract its magnitude without wrapping notes
+  ; above 127 into the negative branch.
+  eor #$ff
   clc
-  adc effects_temp+1
-  bpl sm_store
+  adc #1
+  sta temp+4
+  lda effects_temp+1
+  sec
+  sbc temp+4
+  bcs sm_clamp
   lda #0
+  jmp sm_clamp
+sm_high:
+  lda #NOTE_MAX
+sm_clamp:
+  jsr clamp_note
 sm_store:
   sta note_n, x
   jmp sm_done
@@ -2481,15 +2539,27 @@ legato_tick_loop:
   bne legato_tick_next
   lda legato_amt, x
   beq legato_tick_next
+  bmi legato_down
+  lda note_n, x
   clc
-  adc note_n, x
-  bpl :+
+  adc legato_amt, x
+  bcs legato_high
+  jmp legato_apply
+legato_high:
+  lda #NOTE_MAX
+  jmp legato_apply
+legato_down:
+  eor #$ff
+  clc
+  adc #1
+  sta temp+4
+  lda note_n, x
+  sec
+  sbc temp+4
+  bcs legato_apply
   lda #0
-  jmp :++
-: cmp #95
-  bcc :+
-  lda #95
-:
+legato_apply:
+  jsr clamp_note
   sta note_n, x
 legato_tick_next:
   dex
@@ -2499,10 +2569,13 @@ legato_tick_next:
   ; pre-pitch-slide code
   ldx #chnum-1
 relslide_loop:
-  lda note_dest ,x
+  lda didporta, x
   and #$80
   beq slide_skip
-  eor note_dest ,x
+  lda didporta, x
+  and #$7f
+  sta didporta, x
+  lda note_dest, x
   sta macroIns
   lda slide_amt_sign, x
   beq positive_slide2
@@ -2516,6 +2589,9 @@ positive_slide2:
   lda note_n, x
   sec
   sbc macroIns
+  bcs :+
+  lda #0
+:
   jsr clamp_note
   sta note_dest, x
 slide_skip:
@@ -3035,9 +3111,9 @@ arp_mod:
 .byte 0,1,2,0
 
 clamp_note:
-  cmp #95
+  cmp #NOTE_MAX
   bcc :+
-  lda #95
+  lda #NOTE_MAX
 :
   rts
 
@@ -3126,10 +3202,21 @@ gen_note_table_slide:
 ;    sta $100+I*16, x
 ;.endrepeat
 
+    ; Saturate when the scaled pitch exceeds 16 bits instead of letting
+    ; the >>8 result wrap (the DSP pitch limit is $3FFF).
+    lda PRODUCT+3
+    beq :+
+    lda #$ff
+    sta note_table_temp
+    lda #$3f
+    sta note_table_temp+1
+    jmp :++
+:
     lda PRODUCT+1
     sta note_table_temp
     lda PRODUCT+2
     sta note_table_temp+1
+:
     pla
     ldy PRODUCT+4
     rts
@@ -3177,10 +3264,21 @@ gen_note_table:
 ;    sta $100+I*16, x
 ;.endrepeat
 
+    ; Saturate when the scaled pitch exceeds 16 bits instead of letting
+    ; the >>8 result wrap (the DSP pitch limit is $3FFF).
+    lda PRODUCT+3
+    beq :+
+    lda #$ff
+    sta note_table_temp
+    lda #$3f
+    sta note_table_temp+1
+    jmp :++
+:
     lda PRODUCT+1
     sta note_table_temp
     lda PRODUCT+2
     sta note_table_temp+1
+:
     pla
     ldy PRODUCT+4
     rts
@@ -3262,10 +3360,21 @@ gen_note_table_linear:
 :
     jsr multiply_16bit_unsigned
     ldx PRODUCT+5
+    ; Saturate when the scaled pitch exceeds 16 bits instead of letting
+    ; the >>8 result wrap (the DSP pitch limit is $3FFF).
+    lda PRODUCT+3
+    beq :+
+    lda #$ff
+    sta note_table_temp
+    lda #$3f
+    sta note_table_temp+1
+    jmp :++
+:
     lda PRODUCT+1
     sta note_table_temp
     lda PRODUCT+2
     sta note_table_temp+1
+:
     pla
     ldy PRODUCT+4
     rts
