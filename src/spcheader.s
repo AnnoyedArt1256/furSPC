@@ -27,7 +27,7 @@ tracktitle: .byte "Furnace Driver"
   .res (spcheaderstart + $4E - *)
 albumtitle: .byte "furSPC Test"
   .res (spcheaderstart + $6E - *)
-rippername: .byte "AArt1256"
+rippername: .byte "furSPC"
   .res (spcheaderstart + $7E - *)
 tracksubtitle: .byte 0
   .res (spcheaderstart + $9E - *)
@@ -35,7 +35,7 @@ builddate: .byte 0
   .res (spcheaderstart + $A9 - *)
 tracktime_s: .byte "158"
   .res (spcheaderstart + $AC - *)
-fadetime_ms: .byte "0"
+fadetime_ms: .byte "5000"
   .res (spcheaderstart + $B1 - *)
 artistname: .byte "AArt1256"
   .res (spcheaderstart + $D1 - *)

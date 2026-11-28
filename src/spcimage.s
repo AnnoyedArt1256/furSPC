@@ -153,6 +153,7 @@ mframeV: .res chnum
 mframeA: .res chnum
 mframeS: .res chnum
 mframeD: .res chnum
+mframeG: .res chnum
 .if PAN_ENABLE
 mframePL: .res chnum
 mframePR: .res chnum
@@ -162,6 +163,7 @@ doMacroV: .res chnum
 doMacroA: .res chnum
 doMacroS: .res chnum
 doMacroD: .res chnum
+doMacroG: .res chnum
 .if PAN_ENABLE
 doMacroPL: .res chnum
 doMacroPR: .res chnum
@@ -234,6 +236,7 @@ on_ch:
     lda ins, x
     sta wav_length, x
     tax
+.if MACRO_NOISE
     lda insNhas, x
     beq @skip
     stx insN
@@ -242,6 +245,7 @@ on_ch:
     lda #0
     sta mframeN
 @skip:
+.endif
 
     ldx xt
     lda ins, x
@@ -556,6 +560,7 @@ init_chan_loop:
   sta note_dest, x
   sta mframeA, x
   sta mframeD, x
+  sta mframeG, x
   sta mframeS, x
   sta mframeV, x
 .if PAN_ENABLE
@@ -564,6 +569,7 @@ init_chan_loop:
 .endif
   sta doMacroA, x
   sta doMacroD, x
+  sta doMacroG, x
   sta doMacroS, x
   sta doMacroV, x
 .if PAN_ENABLE
@@ -1137,14 +1143,22 @@ check_fb:
   ldx ch
   lda ins, x
   tay
+.if MACRO_VOL
   lda insVrel, y
   sta mframeV, x
+.endif
+.if MACRO_ARP
   lda insArel, y
   sta mframeA, x
+.endif
+.if MACRO_WAVE
   lda insDrel, y
   sta mframeD, x
+.endif
+.if MACRO_SPEC
   lda insSrel, y
   sta mframeS, x
+.endif
 .if PAN_ENABLE
   lda insPLrel, y
   sta mframePL, x
@@ -1172,6 +1186,7 @@ check_fb:
   sta doMacroA, x
   sta doMacroV, x
   sta doMacroD, x
+  sta doMacroG, x
   sta doMacroS, x
 .if PAN_ENABLE
   sta doMacroPL, x
@@ -1317,6 +1332,7 @@ cont_advance:
   sta mframeV, x
   sta mframeA, x
   sta mframeD, x
+  sta mframeG, x
   sta mframeS, x
 .if PAN_ENABLE
   sta mframePL, x
@@ -1328,6 +1344,7 @@ cont_advance:
   sta doMacroA, x
   sta doMacroV, x
   sta doMacroD, x
+  sta doMacroG, x
   sta doMacroS, x
 .if PAN_ENABLE
   sta doMacroPL, x
@@ -1393,6 +1410,7 @@ end_advance:
 
 add_advance_routine
 
+.if MACRO_ARP
 .macro add_insarp
 insarp:
   .local end, skip1, beg, skip2
@@ -1449,7 +1467,9 @@ end:
 .endmacro
 
 add_insarp
+.endif
 
+.if MACRO_WAVE
 .macro add_insduty
 insduty:
   .local end, skip1, beg, skip2
@@ -1492,7 +1512,9 @@ end:
 .endmacro
 
 add_insduty
+.endif
 
+.if MACRO_VOL
 .macro add_insvol
 insvol:
   .local end, skip1, beg, skip2
@@ -1535,7 +1557,9 @@ end:
 .endmacro
 
 add_insvol
+.endif
 
+.if MACRO_SPEC
 .macro add_insspec
 insspec:
   .local end, skip1, beg, skip2
@@ -1578,6 +1602,63 @@ end:
 .endmacro
 
 add_insspec
+.endif
+
+.if MACRO_GAIN
+.macro add_insgain
+insgain:
+  .local end, skip1, beg, skip2
+beg:
+  ldx ch
+  lda doMacroG, x
+  beq end
+  lda ins, x
+  tay
+  lda insM, y
+  and #3
+  cmp #3
+  beq :+
+  lda #0
+  sta doMacroG, x
+  rts
+:
+  lda insGL, y
+  sta macroIns
+  lda insGH, y
+  sta macroIns+1
+  ldx ch
+  lda mframeG, x
+  tay
+  ldya macroIns
+  sta temp
+  cmp #$ff
+  bne skip1
+  iny
+  ldya macroIns
+  cmp #$ff
+  beq :+
+  sta mframeG, x
+  jmp beg
+:
+  lda #0
+  sta doMacroG, x
+  rts
+skip1:
+  lda temp
+  pha
+  txa
+  xcn a
+  ora #7
+  sta DSPADDR
+  pla
+  sta DSPDATA
+  incx mframeG
+end:
+  rts
+.endmacro
+
+add_insgain
+.endif
 
 .if PAN_ENABLE
 .macro add_inspanl
@@ -1663,6 +1744,7 @@ end:
 add_inspanr
 .endif
 
+.if MACRO_NOISE
 .macro add_insnois
 insnois:
   .local end, skip1, beg, skip2
@@ -1700,6 +1782,7 @@ end:
 .endmacro
 
 add_insnois
+.endif
 
 .macro cmp16 val1, val2
     lda val1
@@ -2323,16 +2406,29 @@ note_tick_loop:
 .repeat chnum, I
   lda #I
   sta ch
+.if MACRO_ARP
   jsr insarp
+.endif
+.if MACRO_VOL
   jsr insvol
+.endif
+.if MACRO_WAVE
   jsr insduty
+.endif
+.if MACRO_SPEC
   jsr insspec
+.endif
+.if MACRO_GAIN
+  jsr insgain
+.endif
 .if PAN_ENABLE
   jsr inspanl
   jsr inspanr
 .endif
 .endrepeat
+.if MACRO_NOISE
   jsr insnois
+.endif
 
   ; pitch bends go brr
   ldx #chnum-1

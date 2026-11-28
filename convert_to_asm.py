@@ -79,6 +79,15 @@ if not pan_used:
         if pan_used:
             break
 
+# Macro routines and their instrument tables are only needed when the
+# corresponding macro exists somewhere in the module.
+macro_vol_used = any(True for _ in instrument_macros(module, MacroCode.VOL))
+macro_arp_used = any(True for _ in instrument_macros(module, MacroCode.ARP))
+macro_wave_used = any(True for _ in instrument_macros(module, MacroCode.WAVE))
+macro_spec_used = any(True for _ in instrument_macros(module, MacroCode.EX1))
+macro_gain_used = any(True for _ in instrument_macros(module, MacroCode.EX2))
+macro_noise_used = any(True for _ in instrument_macros(module, MacroCode.DUTY))
+
 # Echo is only useful if it is enabled and at least one channel is routed
 # to it, either by the initial mask, a 12xx effect, or an EX1 special macro.
 echo_on = bool(flags.get('echo', False))
@@ -126,6 +135,12 @@ with open("src/features.inc", "w") as feature_file:
     feature_file.write(".define SNES_ENV_DEC %d\n" % (1 if "DEC" in snes_env_modes else 0))
     feature_file.write(".define SNES_ENV_EXP %d\n" % (1 if "EXP" in snes_env_modes else 0))
     feature_file.write(".define SNES_ENV_GAIN %d\n" % (1 if "GAIN" in snes_env_modes else 0))
+    feature_file.write(".define MACRO_VOL %d\n" % (1 if macro_vol_used else 0))
+    feature_file.write(".define MACRO_ARP %d\n" % (1 if macro_arp_used else 0))
+    feature_file.write(".define MACRO_WAVE %d\n" % (1 if macro_wave_used else 0))
+    feature_file.write(".define MACRO_SPEC %d\n" % (1 if macro_spec_used else 0))
+    feature_file.write(".define MACRO_GAIN %d\n" % (1 if macro_gain_used else 0))
+    feature_file.write(".define MACRO_NOISE %d\n" % (1 if macro_noise_used else 0))
 
 speed_type = len(module.subsongs[subsong].speed_pattern)
 song_clock = module.subsongs[subsong].timing.clock_speed
@@ -449,6 +464,7 @@ relS = []
 relN = []
 relPL = []
 relPR = []
+relG = []
 
 f.write("ticks_init:")
 f.write(".byte ")
@@ -459,6 +475,7 @@ elif speed_type == 2:
     f.write(str(module.subsongs[subsong].speed_pattern[0])+", ")
     f.write(str(module.subsongs[subsong].speed_pattern[1])+"\n")
 
+f.write(".if MACRO_VOL\n")
 f.write("insVL:\n")
 f.write(".lobytes ")
 for i in range(len(module.instruments)):
@@ -475,7 +492,9 @@ for i in range(len(module.instruments)):
         f.write("\n")
     else:
         f.write(", ")
+f.write(".endif\n")
 
+f.write(".if MACRO_ARP\n")
 f.write("insAL:\n")
 f.write(".lobytes ")
 for i in range(len(module.instruments)):
@@ -492,7 +511,9 @@ for i in range(len(module.instruments)):
         f.write("\n")
     else:
         f.write(", ")
+f.write(".endif\n")
 
+f.write(".if MACRO_WAVE\n")
 f.write("insDL:\n")
 f.write(".lobytes ")
 for i in range(len(module.instruments)):
@@ -509,6 +530,7 @@ for i in range(len(module.instruments)):
         f.write("\n")
     else:
         f.write(", ")
+f.write(".endif\n")
 
 f.write("insEL:\n")
 f.write(".lobytes ")
@@ -528,6 +550,7 @@ for i in range(len(module.instruments)):
         f.write(", ")
 
 
+f.write(".if MACRO_SPEC\n")
 f.write("insSL:\n")
 f.write(".lobytes ")
 for i in range(len(module.instruments)):
@@ -544,8 +567,30 @@ for i in range(len(module.instruments)):
         f.write("\n")
     else:
         f.write(", ")
+f.write(".endif\n")
 
 
+f.write(".if MACRO_GAIN\n")
+f.write("insGL:\n")
+f.write(".lobytes ")
+for i in range(len(module.instruments)):
+    f.write("ins"+str(i)+"G")
+    if i == len(module.instruments)-1:
+        f.write("\n")
+    else:
+        f.write(", ")
+f.write("insGH:\n")
+f.write(".hibytes ")
+for i in range(len(module.instruments)):
+    f.write("ins"+str(i)+"G")
+    if i == len(module.instruments)-1:
+        f.write("\n")
+    else:
+        f.write(", ")
+f.write(".endif\n")
+
+
+f.write(".if MACRO_NOISE\n")
 f.write("insNL:\n")
 f.write(".lobytes ")
 for i in range(len(module.instruments)):
@@ -562,6 +607,7 @@ for i in range(len(module.instruments)):
         f.write("\n")
     else:
         f.write(", ")
+f.write(".endif\n")
 
 if pan_used:
     f.write("insPLL:\n")
@@ -749,13 +795,14 @@ for i in range(len(module.instruments)):
     duty = [default_wave, 0xFF, 0xFF]
     vol = [0x7F,0xFF,0xFF]
     special = [0xFF,0xFF]
+    gain = [0xFF,0xFF]
     noise = [0xFF,0xFF]
     panl = [0xFF,0xFF]
     panr = [0xFF,0xFF]
     macros = []
     for j in a:
         macros = j.macros
-    hasRelTotal = [0,0,0,0,0,0,0]
+    hasRelTotal = [0,0,0,0,0,0,0,0]
     has_noise.append(0)
     for j in macros:
         kind = j.kind
@@ -860,6 +907,27 @@ for i in range(len(module.instruments)):
             hasRelTotal[3] = 1
             special.append(0xFF)
             special.append(loop)
+        if kind == MacroCode.EX2:
+            gain = []
+            loop = 0xff
+            loop2 = 0
+            hasRel = 0
+            for k in j.data:
+                if k == MacroItem.LOOP:
+                    loop = loop2
+                elif k == MacroItem.RELEASE:
+                    gain.append(0xFF)
+                    gain.append(loop)
+                    relG.append(len(gain))
+                    hasRel = 1
+                else:
+                    loop2 = len(gain)
+                    gain.append(k & 0xFF)
+            if hasRel == 0:
+                relG.append(len(gain))
+            hasRelTotal[7] = 1
+            gain.append(0xFF)
+            gain.append(loop)
         if kind == MacroCode.PAN_L:
             s = j.speed
             panl = []
@@ -942,63 +1010,93 @@ for i in range(len(module.instruments)):
         relPL.append(0)
     if hasRelTotal[6] == 0:
         relPR.append(0)
+    if hasRelTotal[7] == 0:
+        relG.append(0)
     vol = str(vol)[1:-1]
     duty = str(duty)[1:-1]
     arp = str(arp)[1:-1]
     special = str(special)[1:-1]
+    gain = str(gain)[1:-1]
     noise = str(noise)[1:-1]
     panl = str(panl)[1:-1]
     panr = str(panr)[1:-1]
 
-    if arp in dups:
-        f.write("ins"+str(i)+"A = "+dups[arp]+"\n")
+    f.write(".if MACRO_ARP\n")
+    arp_key = ("A", arp)
+    if arp_key in dups:
+        f.write("ins"+str(i)+"A = "+dups[arp_key]+"\n")
     else:
         f.write("ins"+str(i)+"A:\n")
         f.write(".byte "+arp+"\n")
-        dups[arp] = "ins"+str(i)+"A"
+        dups[arp_key] = "ins"+str(i)+"A"
+    f.write(".endif\n")
 
-    if duty in dups:
-        f.write("ins"+str(i)+"D = "+dups[duty]+"\n")
+    f.write(".if MACRO_WAVE\n")
+    duty_key = ("D", duty)
+    if duty_key in dups:
+        f.write("ins"+str(i)+"D = "+dups[duty_key]+"\n")
     else:
         f.write("ins"+str(i)+"D:\n")
         f.write(".byte "+duty+"\n")
-        dups[duty] = "ins"+str(i)+"D"
+        dups[duty_key] = "ins"+str(i)+"D"
+    f.write(".endif\n")
 
-    if vol in dups:
-        f.write("ins"+str(i)+"V = "+dups[vol]+"\n")
+    f.write(".if MACRO_VOL\n")
+    vol_key = ("V", vol)
+    if vol_key in dups:
+        f.write("ins"+str(i)+"V = "+dups[vol_key]+"\n")
     else:
         f.write("ins"+str(i)+"V:\n")
         f.write(".byte "+vol+"\n")
-        dups[vol] = "ins"+str(i)+"V"
+        dups[vol_key] = "ins"+str(i)+"V"
+    f.write(".endif\n")
 
-    if special in dups:
-        f.write("ins"+str(i)+"S = "+dups[special]+"\n")
+    f.write(".if MACRO_SPEC\n")
+    special_key = ("S", special)
+    if special_key in dups:
+        f.write("ins"+str(i)+"S = "+dups[special_key]+"\n")
     else:
         f.write("ins"+str(i)+"S:\n")
         f.write(".byte "+special+"\n")
-        dups[special] = "ins"+str(i)+"S"
+        dups[special_key] = "ins"+str(i)+"S"
+    f.write(".endif\n")
 
-    if noise in dups:
-        f.write("ins"+str(i)+"N = "+dups[noise]+"\n")
+    f.write(".if MACRO_NOISE\n")
+    noise_key = ("N", noise)
+    if noise_key in dups:
+        f.write("ins"+str(i)+"N = "+dups[noise_key]+"\n")
     else:
         f.write("ins"+str(i)+"N:\n")
         f.write(".byte "+noise+"\n")
-        dups[noise] = "ins"+str(i)+"N"
+        dups[noise_key] = "ins"+str(i)+"N"
+    f.write(".endif\n")
+
+    f.write(".if MACRO_GAIN\n")
+    gain_key = ("G", gain)
+    if gain_key in dups:
+        f.write("ins"+str(i)+"G = "+dups[gain_key]+"\n")
+    else:
+        f.write("ins"+str(i)+"G:\n")
+        f.write(".byte "+gain+"\n")
+        dups[gain_key] = "ins"+str(i)+"G"
+    f.write(".endif\n")
 
     if pan_used:
-        if panl in dups:
-            f.write("ins"+str(i)+"PL = "+dups[panl]+"\n")
+        panl_key = ("PL", panl)
+        if panl_key in dups:
+            f.write("ins"+str(i)+"PL = "+dups[panl_key]+"\n")
         else:
             f.write("ins"+str(i)+"PL:\n")
             f.write(".byte "+panl+"\n")
-            dups[panl] = "ins"+str(i)+"PL"
+            dups[panl_key] = "ins"+str(i)+"PL"
 
-        if panr in dups:
-            f.write("ins"+str(i)+"PR = "+dups[panr]+"\n")
+        panr_key = ("PR", panr)
+        if panr_key in dups:
+            f.write("ins"+str(i)+"PR = "+dups[panr_key]+"\n")
         else:
             f.write("ins"+str(i)+"PR:\n")
             f.write(".byte "+panr+"\n")
-            dups[panr] = "ins"+str(i)+"PR"
+            dups[panr_key] = "ins"+str(i)+"PR"
 
 relV = str(relV)[1:-1]
 relD = str(relD)[1:-1]
@@ -1006,14 +1104,27 @@ relA = str(relA)[1:-1]
 relS = str(relS)[1:-1]
 relPL = str(relPL)[1:-1]
 relPR = str(relPR)[1:-1]
+relG = str(relG)[1:-1]
+f.write(".if MACRO_ARP\n")
 f.write("insArel:\n")
 f.write(".byte "+relA+"\n")
+f.write(".endif\n")
+f.write(".if MACRO_WAVE\n")
 f.write("insDrel:\n")
 f.write(".byte "+relD+"\n")
+f.write(".endif\n")
+f.write(".if MACRO_VOL\n")
 f.write("insVrel:\n")
 f.write(".byte "+relV+"\n")
+f.write(".endif\n")
+f.write(".if MACRO_SPEC\n")
 f.write("insSrel:\n")
 f.write(".byte "+relS+"\n")
+f.write(".endif\n")
+f.write(".if MACRO_GAIN\n")
+f.write("insGrel:\n")
+f.write(".byte "+relG+"\n")
+f.write(".endif\n")
 if pan_used:
     f.write("insPLrel:\n")
     f.write(".byte "+relPL+"\n")
@@ -1218,6 +1329,7 @@ for i in range(len(wav_lens)):
     else:
         f.write(", ")
 
+f.write(".if MACRO_NOISE\n")
 f.write("insNhas:\n")
 f.write(".byte ")
 for i in range(len(has_noise)):
@@ -1226,6 +1338,7 @@ for i in range(len(has_noise)):
         f.write("\n")
     else:
         f.write(", ")
+f.write(".endif\n")
 
 
 f.close()

@@ -8,9 +8,9 @@ FINALLY, an SNES driver that is not total dogwater to use!
 
 * You have to have [Python](https://www.python.org/) and the [CC65 toolchain](https://cc65.github.io/) installed
 * Both pitch linearity modes are supported: "None" uses frequency-based pitch slides, "Full" uses semitone-based (1/128 semitone) pitch slides. Legacy "Partial" treated as "Full".
-* Unused features are omitted from the generated driver: panning code is only included when a pan effect or pan macro is used, and echo setup/toggle code is only included when a channel is routed to echo.
+* Unused features are omitted from the generated driver: panning code is only included when a pan effect or pan macro is used, echo setup/toggle code is only included when a channel is routed to echo, and each macro type's code and tables are only included when that macro is present.
 
-* The driver only supports **volume, arpeggio, waveform, panning (left/right), noise freq and special** macros in each instrument and it DOESN'T support LFO and ADSR macros nor delay and step length
+* The driver only supports **volume, arpeggio, waveform, panning (left/right), noise freq, special (EX1), and SNES gain (EX2)** macros in each instrument and it DOESN'T support LFO and ADSR macros nor delay and step length
 
 * MAKE SURE TO CONVERT ALL SAMPLES IN THE MODULE TO **BRR SAMPLES** BEFORE USING THE CONVERTER TOOL
  
