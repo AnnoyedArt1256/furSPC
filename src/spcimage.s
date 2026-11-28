@@ -175,6 +175,31 @@ doMacroPR: .res chnum
 doMacroN: .res 1
 insN: .res 1
 
+.if MACRO_SPEED
+.if MACRO_VOL
+mspdV: .res chnum
+.endif
+.if MACRO_ARP
+mspdA: .res chnum
+.endif
+.if MACRO_WAVE
+mspdD: .res chnum
+.endif
+.if MACRO_SPEC
+mspdS: .res chnum
+.endif
+.if MACRO_GAIN
+mspdG: .res chnum
+.endif
+.if PAN_ENABLE
+mspdPL: .res chnum
+mspdPR: .res chnum
+.endif
+.if MACRO_NOISE
+mspdN: .res 1
+.endif
+.endif
+
 special: .res chnum
 
 duty: .res chnum
@@ -257,6 +282,9 @@ on_ch:
     sta doMacroN
     lda #0
     sta mframeN
+.if MACRO_SPEED
+    sta mspdN
+.endif
 @skip:
 .endif
 
@@ -1193,31 +1221,6 @@ check_fb:
   cmp #$FD
   bne :+
   ldx ch
-  lda ins, x
-  tay
-.if MACRO_VOL
-  lda insVrel, y
-  sta mframeV, x
-.endif
-.if MACRO_ARP
-  lda insArel, y
-  sta mframeA, x
-.endif
-.if MACRO_WAVE
-  lda insDrel, y
-  sta mframeD, x
-.endif
-.if MACRO_SPEC
-  lda insSrel, y
-  sta mframeS, x
-.endif
-.if PAN_ENABLE
-  lda insPLrel, y
-  sta mframePL, x
-  lda insPRrel, y
-  sta mframePR, x
-.endif
-  ldx ch
   lda #$ff
   sta isoff, x
   jsr off_ch
@@ -1234,16 +1237,6 @@ check_fb:
   lda #$ff
   sta isoff, x
   jsr off_ch
-  lda #0
-  sta doMacroA, x
-  sta doMacroV, x
-  sta doMacroD, x
-  sta doMacroG, x
-  sta doMacroS, x
-.if PAN_ENABLE
-  sta doMacroPL, x
-  sta doMacroPR, x
-.endif
   lda #1
   sta dur, x
   ldy #0
@@ -1375,9 +1368,6 @@ cont_advance:
   sta slide_amt_sign, x
   sta do_port, x
 :
-  lda note_tick, x
-  cmp #2
-  bcc :+
   lda legato, x
   bne :+
   lda #0
@@ -1389,6 +1379,27 @@ cont_advance:
 .if PAN_ENABLE
   sta mframePL, x
   sta mframePR, x
+.endif
+.if MACRO_SPEED
+.if MACRO_VOL
+  sta mspdV, x
+.endif
+.if MACRO_ARP
+  sta mspdA, x
+.endif
+.if MACRO_WAVE
+  sta mspdD, x
+.endif
+.if MACRO_SPEC
+  sta mspdS, x
+.endif
+.if MACRO_GAIN
+  sta mspdG, x
+.endif
+.if PAN_ENABLE
+  sta mspdPL, x
+  sta mspdPR, x
+.endif
 .endif
   sta isoff, x
   jsr on_ch
@@ -1452,14 +1463,26 @@ add_advance_routine
 .if MACRO_ARP
 .macro add_insarp
 insarp:
-  .local end, skip1, beg, skip2
+  .local end, skip1, beg, skip2, process
 beg:
   ldx ch
   lda doMacroA, x
   bne :+
   jmp end
 :
-
+.if MACRO_SPEED
+  lda mspdA, x
+  beq :+
+  decx mspdA
+  rts
+:
+  lda ins, x
+  tay
+  lda insAspd, y
+  sta mspdA, x
+  decx mspdA
+.endif
+process:
   ldx ch
   lda ins, x
   tay
@@ -1480,7 +1503,7 @@ beg:
   cmp #$ff
   beq :+
   sta mframeA, x
-  jmp beg
+  jmp process
 :
   lda #0
   sta doMacroA, x
@@ -1511,12 +1534,24 @@ add_insarp
 .if MACRO_WAVE
 .macro add_insduty
 insduty:
-  .local end, skip1, beg, skip2
+  .local end, skip1, beg, skip2, process
 beg:
   ldx ch
   lda doMacroD, x
   beq end
-
+.if MACRO_SPEED
+  lda mspdD, x
+  beq :+
+  decx mspdD
+  rts
+:
+  lda ins, x
+  tay
+  lda insDspd, y
+  sta mspdD, x
+  decx mspdD
+.endif
+process:
   ldx ch
   lda ins, x
   tay
@@ -1536,7 +1571,7 @@ beg:
   cmp #$ff
   beq :+
   sta mframeD, x
-  jmp beg
+  jmp process
 :
   lda #0
   sta doMacroD, x
@@ -1556,12 +1591,24 @@ add_insduty
 .if MACRO_VOL
 .macro add_insvol
 insvol:
-  .local end, skip1, beg, skip2
+  .local end, skip1, beg, skip2, process
 beg:
   ldx ch
   lda doMacroV, x
   beq end
-
+.if MACRO_SPEED
+  lda mspdV, x
+  beq :+
+  decx mspdV
+  rts
+:
+  lda ins, x
+  tay
+  lda insVspd, y
+  sta mspdV, x
+  decx mspdV
+.endif
+process:
   ldx ch
   lda ins, x
   tay
@@ -1581,7 +1628,7 @@ beg:
   cmp #$ff
   beq :+
   sta mframeV, x
-  jmp beg
+  jmp process
 :
   lda #0
   sta doMacroV, x
@@ -1601,12 +1648,24 @@ add_insvol
 .if MACRO_SPEC
 .macro add_insspec
 insspec:
-  .local end, skip1, beg, skip2
+  .local end, skip1, beg, skip2, process
 beg:
   ldx ch
   lda doMacroS, x
   beq end
-
+.if MACRO_SPEED
+  lda mspdS, x
+  beq :+
+  decx mspdS
+  rts
+:
+  lda ins, x
+  tay
+  lda insSspd, y
+  sta mspdS, x
+  decx mspdS
+.endif
+process:
   ldx ch
   lda ins, x
   tay
@@ -1626,7 +1685,7 @@ beg:
   cmp #$ff
   beq :+
   sta mframeS, x
-  jmp beg
+  jmp process
 :
   lda #0
   sta doMacroS, x
@@ -1646,7 +1705,7 @@ add_insspec
 .if MACRO_GAIN
 .macro add_insgain
 insgain:
-  .local end, skip1, beg, skip2
+  .local end, skip1, beg, skip2, process
 beg:
   ldx ch
   lda doMacroG, x
@@ -1661,6 +1720,19 @@ beg:
   sta doMacroG, x
   rts
 :
+.if MACRO_SPEED
+  lda mspdG, x
+  beq :+
+  decx mspdG
+  rts
+:
+  lda ins, x
+  tay
+  lda insGspd, y
+  sta mspdG, x
+  decx mspdG
+.endif
+process:
   lda insGL, y
   sta macroIns
   lda insGH, y
@@ -1677,7 +1749,7 @@ beg:
   cmp #$ff
   beq :+
   sta mframeG, x
-  jmp beg
+  jmp process
 :
   lda #0
   sta doMacroG, x
@@ -1702,12 +1774,24 @@ add_insgain
 .if PAN_ENABLE
 .macro add_inspanl
 inspanl:
-  .local end, skip1, beg, done
+  .local end, skip1, beg, done, process
 beg:
   ldx ch
   lda doMacroPL, x
   beq end
-
+.if MACRO_SPEED
+  lda mspdPL, x
+  beq :+
+  decx mspdPL
+  rts
+:
+  lda ins, x
+  tay
+  lda insPLspd, y
+  sta mspdPL, x
+  decx mspdPL
+.endif
+process:
   lda ins, x
   tay
   lda insPLL, y
@@ -1725,7 +1809,7 @@ beg:
   cmp #$ff
   beq done
   sta mframePL, x
-  jmp beg
+  jmp process
 done:
   lda #0
   sta doMacroPL, x
@@ -1743,12 +1827,24 @@ add_inspanl
 
 .macro add_inspanr
 inspanr:
-  .local end, skip1, beg, done
+  .local end, skip1, beg, done, process
 beg:
   ldx ch
   lda doMacroPR, x
   beq end
-
+.if MACRO_SPEED
+  lda mspdPR, x
+  beq :+
+  decx mspdPR
+  rts
+:
+  lda ins, x
+  tay
+  lda insPRspd, y
+  sta mspdPR, x
+  decx mspdPR
+.endif
+process:
   lda ins, x
   tay
   lda insPRL, y
@@ -1766,7 +1862,7 @@ beg:
   cmp #$ff
   beq done
   sta mframePR, x
-  jmp beg
+  jmp process
 done:
   lda #0
   sta doMacroPR, x
@@ -1786,11 +1882,25 @@ add_inspanr
 .if MACRO_NOISE
 .macro add_insnois
 insnois:
-  .local end, skip1, beg, skip2
+  .local end, skip1, beg, skip2, process
 beg:
   lda doMacroN
   beq end
-
+.if MACRO_SPEED
+  lda mspdN
+  beq :+
+  dec a
+  sta mspdN
+  rts
+:
+  lda insN
+  tay
+  lda insNspd, y
+  sta mspdN
+  dec a
+  sta mspdN
+.endif
+process:
   ldy insN
   lda insNL, y
   sta macroIns
@@ -1806,7 +1916,7 @@ beg:
   cmp #$ff
   beq :+
   sta mframeN
-  jmp beg
+  jmp process
 :
   lda #0
   sta doMacroN

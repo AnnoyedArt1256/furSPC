@@ -87,6 +87,15 @@ macro_wave_used = any(True for _ in instrument_macros(module, MacroCode.WAVE))
 macro_spec_used = any(True for _ in instrument_macros(module, MacroCode.EX1))
 macro_gain_used = any(True for _ in instrument_macros(module, MacroCode.EX2))
 macro_noise_used = any(True for _ in instrument_macros(module, MacroCode.DUTY))
+# Furnace macro speed (step length) is per macro; only emit the extra
+# counters and tables when at least one macro holds a step for >1 tick.
+macro_speed_used = any(
+    getattr(macro, "speed", 1) != 1
+    for ins in module.instruments
+    for feature in ins.features
+    if isinstance(feature, InsFeatureMacro)
+    for macro in feature.macros
+)
 
 # Echo is only useful if it is enabled and at least one channel is routed
 # to it, either by the initial mask, a 12xx effect, or an EX1 special macro.
@@ -141,6 +150,7 @@ with open("src/features.inc", "w") as feature_file:
     feature_file.write(".define MACRO_SPEC %d\n" % (1 if macro_spec_used else 0))
     feature_file.write(".define MACRO_GAIN %d\n" % (1 if macro_gain_used else 0))
     feature_file.write(".define MACRO_NOISE %d\n" % (1 if macro_noise_used else 0))
+    feature_file.write(".define MACRO_SPEED %d\n" % (1 if macro_speed_used else 0))
 
 speed_type = len(module.subsongs[subsong].speed_pattern)
 song_clock = module.subsongs[subsong].timing.clock_speed
@@ -462,6 +472,14 @@ relN = []
 relPL = []
 relPR = []
 relG = []
+spdV = []
+spdA = []
+spdD = []
+spdS = []
+spdG = []
+spdPL = []
+spdPR = []
+spdN = []
 
 f.write("ticks_init:")
 f.write(".byte ")
@@ -662,6 +680,8 @@ env_dups = {}
 has_noise = []
 for i in range(len(module.instruments)):
     features = module.instruments[i].features
+    spd_v = spd_a = spd_d = spd_s = spd_g = 1
+    spd_pl = spd_pr = spd_n = 1
 
     a = filter(
         lambda x: (
@@ -804,7 +824,7 @@ for i in range(len(module.instruments)):
     for j in macros:
         kind = j.kind
         if kind == MacroCode.VOL:
-            s = j.speed
+            spd_v = max(1, min(255, int(j.speed)))
             vol = []
             loop = 0xff
             loop2 = 0
@@ -826,7 +846,7 @@ for i in range(len(module.instruments)):
             vol.append(0xFF)
             vol.append(loop)
         if kind == MacroCode.ARP:
-            s = j.speed
+            spd_a = max(1, min(255, int(j.speed)))
             arp = []
             loop = 0xff
             hasRel = 0
@@ -861,7 +881,7 @@ for i in range(len(module.instruments)):
             arp.append(0xFF)
             arp.append(loop)
         if kind == MacroCode.WAVE:
-            s = j.speed
+            spd_d = max(1, min(255, int(j.speed)))
             duty = []
             loop = 0xff
             loop2 = 0
@@ -883,7 +903,7 @@ for i in range(len(module.instruments)):
             duty.append(0xFF)
             duty.append(loop)
         if kind == MacroCode.EX1:
-            s = j.speed
+            spd_s = max(1, min(255, int(j.speed)))
             special = []
             loop = 0xff
             loop2 = 0
@@ -905,6 +925,7 @@ for i in range(len(module.instruments)):
             special.append(0xFF)
             special.append(loop)
         if kind == MacroCode.EX2:
+            spd_g = max(1, min(255, int(j.speed)))
             gain = []
             loop = 0xff
             loop2 = 0
@@ -926,7 +947,7 @@ for i in range(len(module.instruments)):
             gain.append(0xFF)
             gain.append(loop)
         if kind == MacroCode.PAN_L:
-            s = j.speed
+            spd_pl = max(1, min(255, int(j.speed)))
             panl = []
             loop = 0xff
             loop2 = 0
@@ -948,7 +969,7 @@ for i in range(len(module.instruments)):
             panl.append(0xFF)
             panl.append(loop)
         if kind == MacroCode.PAN_R:
-            s = j.speed
+            spd_pr = max(1, min(255, int(j.speed)))
             panr = []
             loop = 0xff
             loop2 = 0
@@ -970,7 +991,7 @@ for i in range(len(module.instruments)):
             panr.append(0xFF)
             panr.append(loop)
         if kind == MacroCode.DUTY:
-            s = j.speed
+            spd_n = max(1, min(255, int(j.speed)))
             noise = []
             loop = 0xff
             loop2 = 0
@@ -1009,6 +1030,14 @@ for i in range(len(module.instruments)):
         relPR.append(0)
     if hasRelTotal[7] == 0:
         relG.append(0)
+    spdV.append(spd_v)
+    spdA.append(spd_a)
+    spdD.append(spd_d)
+    spdS.append(spd_s)
+    spdG.append(spd_g)
+    spdPL.append(spd_pl)
+    spdPR.append(spd_pr)
+    spdN.append(spd_n)
     vol = str(vol)[1:-1]
     duty = str(duty)[1:-1]
     arp = str(arp)[1:-1]
@@ -1127,6 +1156,29 @@ if pan_used:
     f.write(".byte "+relPL+"\n")
     f.write("insPRrel:\n")
     f.write(".byte "+relPR+"\n")
+
+if macro_speed_used:
+    f.write(".if MACRO_VOL\n")
+    f.write("insVspd:\n.byte " + ", ".join(str(v) for v in spdV) + "\n")
+    f.write(".endif\n")
+    f.write(".if MACRO_ARP\n")
+    f.write("insAspd:\n.byte " + ", ".join(str(v) for v in spdA) + "\n")
+    f.write(".endif\n")
+    f.write(".if MACRO_WAVE\n")
+    f.write("insDspd:\n.byte " + ", ".join(str(v) for v in spdD) + "\n")
+    f.write(".endif\n")
+    f.write(".if MACRO_SPEC\n")
+    f.write("insSspd:\n.byte " + ", ".join(str(v) for v in spdS) + "\n")
+    f.write(".endif\n")
+    f.write(".if MACRO_GAIN\n")
+    f.write("insGspd:\n.byte " + ", ".join(str(v) for v in spdG) + "\n")
+    f.write(".endif\n")
+    if pan_used:
+        f.write("insPLspd:\n.byte " + ", ".join(str(v) for v in spdPL) + "\n")
+        f.write("insPRspd:\n.byte " + ", ".join(str(v) for v in spdPR) + "\n")
+    f.write(".if MACRO_NOISE\n")
+    f.write("insNspd:\n.byte " + ", ".join(str(v) for v in spdN) + "\n")
+    f.write(".endif\n")
 
 for i in range(chnum):
     order = module.subsongs[subsong].order[i]
